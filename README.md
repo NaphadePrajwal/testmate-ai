@@ -1,6 +1,6 @@
 # TestMate AI
 
-TestMate AI is an AI-driven autonomous software testing and bug analysis platform. This repository currently contains **Phase 0**, a production-minded foundation for its FastAPI backend, PostgreSQL persistence, React dashboard, and backend/frontend integration.
+TestMate AI is an AI-driven autonomous software testing and bug analysis platform. It currently contains the Phase 0 application foundation and **Phase 1** relational backend for the core testing workflow.
 
 ## Repository layout
 
@@ -16,7 +16,7 @@ backend/
     ai/               # reserved for LangChain/LangGraph/RAG
     testing/          # reserved for Playwright/HTTPX/PyTest execution
   alembic/            # PostgreSQL migration environment and revisions
-  tests/              # backend foundation tests
+  tests/              # isolated PostgreSQL integration and API tests
 frontend/
   src/
     components/       # reusable UI pieces
@@ -82,6 +82,8 @@ If the API is not running on port 8000, set `VITE_API_BASE_URL` in `frontend/.en
 
 ```powershell
 # backend (from backend/ with its virtual environment activated)
+# TEST_DATABASE_URL must target a dedicated database ending in _test.
+$env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/testmate_ai_test"
 pytest
 
 # frontend (from frontend/)
@@ -89,10 +91,59 @@ npm run build
 npm run lint
 ```
 
-## Database scope
+## Phase 1 database architecture
 
-The only Phase 0 table is `projects`, because it backs the actual project-listing API and dashboard state. The architecture intentionally reserves separate modules for future users, requirements, test cases, executions, results, bug reports, historical knowledge, RAG, agents, and reporting instead of creating unused schema or mock functionality.
+PostgreSQL remains the structured system of record. The database uses this traceability chain:
+
+```text
+Project 1 ── * Requirement 1 ── * Test Case 1 ── * Test Execution
+                                                       ├── * Execution Evidence
+                                                       └── * Defect
+```
+
+- `requirements` are unique by project and title, and contain acceptance criteria.
+- `test_cases` are unique by requirement and title, versioned on permitted updates, and retain structured preconditions and steps as JSONB.
+- `test_executions`, `execution_evidence`, and `defects` are append-oriented history records. They are read-only through the Phase 1 API because execution and analysis producers are later-phase work.
+- UUID keys, indexed foreign keys/statuses, timezone-aware timestamps, PostgreSQL JSONB, unique constraints, and checked lifecycle values enforce durable, queryable data.
+- Foreign keys use `RESTRICT`; services additionally reject deletion of a project with requirements, a requirement with cases, or a case with executions. Executed cases are immutable.
+
+Apply the complete schema, including the additive Phase 1 migration, with:
+
+```powershell
+Set-Location backend
+alembic upgrade head
+```
+
+The migration is additive to the Phase 0 `projects` table and does not rewrite or delete its data.
+
+## API overview
+
+All endpoints are prefixed with `/api/v1` and documented in Swagger at `/docs`.
+
+| Resource | Endpoints |
+| --- | --- |
+| Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{project_id}` |
+| Requirements | `GET/POST /projects/{project_id}/requirements`, `GET/PATCH/DELETE /projects/{project_id}/requirements/{requirement_id}` |
+| Test cases | `GET/POST /projects/{project_id}/test-cases`, `GET/PATCH/DELETE /projects/{project_id}/test-cases/{test_case_id}` |
+| Execution history | `GET /projects/{project_id}/executions`, `GET /projects/{project_id}/executions/{execution_id}` |
+| Execution evidence | `GET /projects/{project_id}/executions/{execution_id}/evidence` and `/{evidence_id}` |
+| Defects | `GET /projects/{project_id}/defects`, `GET /projects/{project_id}/defects/{defect_id}` |
+
+Collection endpoints accept `limit` (1–100) and `offset`; lifecycle filters are available where applicable. Nested resource queries always constrain the entity to the path's project, returning `404` for cross-project access.
+
+## Test database setup
+
+Integration tests never use `DATABASE_URL`. Create a dedicated disposable PostgreSQL database owned by the application role, then set `TEST_DATABASE_URL` before running pytest:
+
+```powershell
+createdb -U postgres -O testmate testmate_ai_test
+Set-Location backend
+$env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/testmate_ai_test"
+pytest
+```
+
+The test fixture rejects names not ending in `_test`, creates only its schema there, wraps each test in a transaction, and removes the schema after the suite completes.
 
 ## Current limitations
 
-Phase 0 does not generate tests, run browsers/APIs, call LLMs, or create artificial results. PostgreSQL must be running with the configured credentials for project listing and migrations to work.
+This phase does not generate tests, run browsers/APIs, call LLMs, create AI agents, use RAG/vector storage, or perform failure analysis. It intentionally does not expose write endpoints for execution, evidence, or defect records; their controlled producers will be introduced in later phases. PostgreSQL must be running with configured credentials for data APIs and migrations to work.

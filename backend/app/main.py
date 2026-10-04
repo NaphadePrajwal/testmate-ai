@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import get_settings
-from app.core.errors import unhandled_exception_handler
+from app.core.errors import conflict_exception_handler, not_found_exception_handler, unhandled_exception_handler
+from app.core.exceptions import ResourceConflictError, ResourceNotFoundError
 
 
 def create_application() -> FastAPI:
@@ -25,6 +26,8 @@ def create_application() -> FastAPI:
         allow_headers=["*"],
     )
     application.add_exception_handler(Exception, unhandled_exception_handler)
+    application.add_exception_handler(ResourceNotFoundError, not_found_exception_handler)
+    application.add_exception_handler(ResourceConflictError, conflict_exception_handler)
     application.include_router(api_router, prefix=settings.api_v1_prefix)
     return application
 
