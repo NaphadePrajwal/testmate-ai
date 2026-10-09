@@ -23,13 +23,20 @@ export function AppLayout({ children, activePage, onNavigate, status }: AppLayou
           ))}
         </nav>
         <div className="absolute bottom-6 left-5 right-5 rounded-xl bg-slate-900 p-4 text-xs leading-5 text-slate-300">
-          <p className="font-semibold text-white">Phase 0 foundation</p>
-          <p className="mt-1">AI analysis, test automation and reporting modules will build on this workspace.</p>
+          <p className="font-semibold text-white">Phase 2 workspace</p>
+          <p className="mt-1">Projects and requirements are ready. AI analysis and test automation will build on this workspace.</p>
         </div>
       </aside>
       <main className="lg:ml-64">
         <header className="flex min-h-20 items-center justify-between border-b border-slate-200 bg-white px-5 sm:px-8">
           <div className="lg:hidden"><Brand /></div>
+          <nav className="flex items-center gap-1 lg:hidden" aria-label="Mobile navigation">
+            {navItems.map((item) => (
+              <button key={item} type="button" onClick={() => onNavigate(item)} className={`rounded-lg px-2.5 py-2 text-xs font-semibold ${activePage === item ? "bg-violet-50 text-violet-800" : "text-slate-500 hover:bg-slate-50"}`}>
+                {item}
+              </button>
+            ))}
+          </nav>
           <div className="hidden lg:block" />
           {status}
         </header>

@@ -78,6 +78,10 @@ Open the URL printed by Vite (normally `http://localhost:5173`). The top-right s
 
 If the API is not running on port 8000, set `VITE_API_BASE_URL` in `frontend/.env`, for example `http://localhost:8001/api/v1`.
 
+## Phase 2 frontend workflow
+
+The dashboard now uses the live backend APIs for project and requirement management. Open **Projects** to create or select a project, then create, edit, view, or (when it has no dependent test cases) delete that project's requirements. The responsive mobile header includes the same Dashboard and Projects navigation as the desktop sidebar.
+
 ## Validation commands
 
 ```powershell
