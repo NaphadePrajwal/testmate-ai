@@ -4,6 +4,7 @@ import type {
   ProjectInput,
   ProjectListResponse,
   Requirement,
+  RequirementAnalysisResponse,
   RequirementInput,
   RequirementListResponse
 } from "../types/api";
@@ -58,5 +59,6 @@ export const api = {
   getRequirements: (projectId: string, limit = 20, offset = 0): Promise<RequirementListResponse> => request<RequirementListResponse>(collectionPath(`/projects/${projectId}/requirements`, limit, offset)),
   createRequirement: (projectId: string, payload: RequirementInput): Promise<Requirement> => request<Requirement>(`/projects/${projectId}/requirements`, { method: "POST", body: JSON.stringify(payload) }),
   updateRequirement: (projectId: string, requirementId: string, payload: Partial<RequirementInput>): Promise<Requirement> => request<Requirement>(`/projects/${projectId}/requirements/${requirementId}`, { method: "PATCH", body: JSON.stringify(payload) }),
-  deleteRequirement: (projectId: string, requirementId: string): Promise<void> => request<void>(`/projects/${projectId}/requirements/${requirementId}`, { method: "DELETE" })
+  deleteRequirement: (projectId: string, requirementId: string): Promise<void> => request<void>(`/projects/${projectId}/requirements/${requirementId}`, { method: "DELETE" }),
+  analyzeRequirement: (projectId: string, requirementId: string): Promise<RequirementAnalysisResponse> => request<RequirementAnalysisResponse>(`/projects/${projectId}/requirements/${requirementId}/analysis`, { method: "POST" })
 };

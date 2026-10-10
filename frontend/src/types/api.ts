@@ -48,3 +48,29 @@ export interface RequirementInput {
   status: RequirementStatus;
   acceptance_criteria: string[];
 }
+
+export type AnalysisSource = "explicit" | "inferred" | "suggested" | "unspecified";
+export type RequirementType = "functional" | "non_functional" | "business_rule" | "constraint" | "other" | "uncertain";
+export type ClarityLevel = "low" | "medium" | "high";
+
+export interface AnalysisItem { text: string; source: AnalysisSource; }
+export interface RequirementAnalysis {
+  summary: AnalysisItem;
+  requirement_type: { classification: RequirementType; rationale: AnalysisItem };
+  actors_and_entities: AnalysisItem[];
+  expected_behaviors: AnalysisItem[];
+  inputs: AnalysisItem[];
+  outputs: AnalysisItem[];
+  preconditions: AnalysisItem[];
+  postconditions: AnalysisItem[];
+  acceptance_criteria: AnalysisItem[];
+  ambiguities_and_missing_information: AnalysisItem[];
+  dependencies_and_constraints: AnalysisItem[];
+  clarification_questions: AnalysisItem[];
+  quality_assessment: { clarity: ClarityLevel; completeness: ClarityLevel; reasons: AnalysisItem[]; limitation: string };
+}
+
+export interface RequirementAnalysisResponse {
+  analysis: RequirementAnalysis;
+  metadata: { provider: string; model: string; prompt_version: string; analyzed_at: string };
+}

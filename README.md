@@ -82,6 +82,26 @@ If the API is not running on port 8000, set `VITE_API_BASE_URL` in `frontend/.en
 
 The dashboard now uses the live backend APIs for project and requirement management. Open **Projects** to create or select a project, then create, edit, view, or (when it has no dependent test cases) delete that project's requirements. The responsive mobile header includes the same Dashboard and Projects navigation as the desktop sidebar.
 
+## Phase 3 requirement analysis
+
+Use **Analyze** on a requirement to request an on-demand structured analysis. Results are not persisted: they represent the current stored requirement and clearly label direct source text, cautious inferences, AI suggestions, and unspecified information. Configure your preferred analysis provider (`gemini` or `openai`) in `backend/.env`:
+
+```env
+# Google Gemini API (free tier available at https://aistudio.google.com/)
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-2.5-flash
+
+# Alternatively, OpenAI:
+# AI_PROVIDER=openai
+# OPENAI_API_KEY=your_openai_key
+# OPENAI_MODEL=gpt-4o-mini
+
+ANALYSIS_TIMEOUT_SECONDS=30
+```
+
+The endpoint is `POST /api/v1/projects/{project_id}/requirements/{requirement_id}/analysis`. It returns a validated analysis plus provider/model and prompt-version metadata; it returns a safe configuration or provider error when analysis cannot run. The application does not provide generated analysis when a provider is not configured.
+
 ## Validation commands
 
 ```powershell
@@ -150,4 +170,4 @@ The test fixture rejects names not ending in `_test`, creates only its schema th
 
 ## Current limitations
 
-This phase does not generate tests, run browsers/APIs, call LLMs, create AI agents, use RAG/vector storage, or perform failure analysis. It intentionally does not expose write endpoints for execution, evidence, or defect records; their controlled producers will be introduced in later phases. PostgreSQL must be running with configured credentials for data APIs and migrations to work.
+This phase does not generate test cases, run browser/API tests, use multi-step agent frameworks, use RAG/vector storage, or perform execution failure analysis. It intentionally does not expose write endpoints for execution, evidence, or defect records; their controlled producers will be introduced in later phases. PostgreSQL must be running with configured credentials for data APIs and migrations to work.

@@ -12,6 +12,12 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     database_url: str = "postgresql+psycopg://testmate:testmate@localhost:5432/testmate_ai"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
+    ai_provider: str = "openai"
+    openai_api_key: str | None = None
+    openai_model: str = "gpt-4o-mini"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
+    analysis_timeout_seconds: float = 30.0
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

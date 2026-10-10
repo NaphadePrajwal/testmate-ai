@@ -8,6 +8,8 @@ from app.api.dependencies import Pagination, pagination_params
 from app.db.session import get_db
 from app.models.enums import RequirementStatus
 from app.schemas.requirement import RequirementCreate, RequirementListResponse, RequirementRead, RequirementUpdate
+from app.schemas.requirement_analysis import RequirementAnalysisRead
+from app.services.requirement_analysis_service import RequirementAnalysisService, get_requirement_analysis_service
 from app.services.requirement_service import RequirementService
 
 router = APIRouter()
@@ -27,6 +29,17 @@ def list_requirements(
 @router.post("", response_model=RequirementRead, status_code=status.HTTP_201_CREATED, summary="Create a requirement")
 def create_requirement(project_id: UUID, payload: RequirementCreate, db: Session = Depends(get_db)) -> RequirementRead:
     return RequirementService(db).create_requirement(project_id, payload)
+
+
+@router.post("/{requirement_id}/analysis", response_model=RequirementAnalysisRead, summary="Analyze a project requirement")
+def analyze_requirement(
+    project_id: UUID,
+    requirement_id: UUID,
+    db: Session = Depends(get_db),
+    analysis_service: RequirementAnalysisService = Depends(get_requirement_analysis_service),
+) -> RequirementAnalysisRead:
+    requirement = RequirementService(db).get_requirement(project_id, requirement_id)
+    return analysis_service.analyze(requirement)
 
 
 @router.get("/{requirement_id}", response_model=RequirementRead, summary="Get a requirement")
