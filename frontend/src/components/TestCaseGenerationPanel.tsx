@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../services/api";
 import type { GeneratedTestCasesResponse, Priority, ReviewStatus, TestCase, TestCaseUpdateInput, TestType } from "../types/api";
+import { ExecutionModal } from "./ExecutionModal";
 
 interface TestCaseGenerationPanelProps {
   projectId: string;
@@ -23,6 +24,7 @@ export function TestCaseGenerationPanel({
   const [filterStatus, setFilterStatus] = useState<ReviewStatus | "all">("all");
   const [editingCase, setEditingCase] = useState<TestCase | null>(null);
   const [editForm, setEditForm] = useState<TestCaseUpdateInput>({});
+  const [executingTestCase, setExecutingTestCase] = useState<TestCase | null>(null);
 
   const loadTestCases = useCallback(async () => {
     setIsLoading(true);
@@ -341,7 +343,16 @@ export function TestCaseGenerationPanel({
                     </>
                   )}
                   {tc.review_status === "approved" && (
-                    <span className="text-xs font-semibold text-emerald-700">✓ Approved</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-emerald-700">✓ Approved</span>
+                      <button
+                        type="button"
+                        onClick={() => setExecutingTestCase(tc)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700"
+                      >
+                        ▶ Run Test
+                      </button>
+                    </div>
                   )}
                   {tc.review_status === "rejected" && (
                     <span className="text-xs font-semibold text-rose-700">✕ Rejected</span>
@@ -390,6 +401,15 @@ export function TestCaseGenerationPanel({
             </div>
           ))}
         </div>
+      )}
+
+      {executingTestCase && (
+        <ExecutionModal
+          projectId={projectId}
+          testCase={executingTestCase}
+          isOpen={true}
+          onClose={() => setExecutingTestCase(null)}
+        />
       )}
     </div>
   );

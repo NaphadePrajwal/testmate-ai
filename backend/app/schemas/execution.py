@@ -8,6 +8,10 @@ from app.models.enums import DefectStatus, EvidenceType, ExecutionStatus, Severi
 from app.schemas.common import APIModel, PageMeta
 
 
+class ExecutionTriggerRequest(APIModel):
+    executor: str | None = Field(default=None, description="Optional runner override: playwright, httpx, or pytest")
+
+
 class ExecutionRead(APIModel):
     model_config = {"from_attributes": True}
 

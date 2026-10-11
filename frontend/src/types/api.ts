@@ -127,3 +127,59 @@ export interface GeneratedTestCasesResponse {
     generated_at: string;
   };
 }
+
+export type ExecutionStatus = "queued" | "running" | "passed" | "failed" | "error" | "cancelled";
+export type EvidenceType = "screenshot" | "video" | "log" | "trace" | "request_response";
+
+export interface StepExecutionResult {
+  step_index: number;
+  action: string;
+  status: "passed" | "failed" | "error" | "skipped";
+  expected?: string | null;
+  actual?: string | null;
+  duration_ms: number;
+  error_message?: string | null;
+  details?: Record<string, unknown>;
+}
+
+export interface ExecutionSummary {
+  total_steps: number;
+  passed_steps: number;
+  failed_steps: number;
+  error_steps: number;
+  skipped_steps: number;
+  total_duration_ms: number;
+  step_results: StepExecutionResult[];
+}
+
+export interface TestExecution {
+  id: string;
+  test_case_id: string;
+  status: ExecutionStatus;
+  executor?: string | null;
+  run_reference?: string | null;
+  summary: ExecutionSummary;
+  error_message?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at: string;
+}
+
+export type ExecutionListResponse = PageResponse<TestExecution>;
+
+export interface ExecutionEvidence {
+  id: string;
+  execution_id: string;
+  evidence_type: EvidenceType;
+  uri: string;
+  label?: string | null;
+  content_type?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export type EvidenceListResponse = PageResponse<ExecutionEvidence>;
+
+export interface ExecutionTriggerInput {
+  executor?: "playwright" | "httpx" | "pytest";
+}

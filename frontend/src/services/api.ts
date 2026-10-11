@@ -1,4 +1,7 @@
 import type {
+  EvidenceListResponse,
+  ExecutionListResponse,
+  ExecutionTriggerInput,
   GeneratedTestCasesResponse,
   HealthResponse,
   Project,
@@ -11,7 +14,8 @@ import type {
   ReviewStatus,
   TestCase,
   TestCaseListResponse,
-  TestCaseUpdateInput
+  TestCaseUpdateInput,
+  TestExecution
 } from "../types/api";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -78,5 +82,15 @@ export const api = {
   approveRequirementTestCase: (projectId: string, requirementId: string, testCaseId: string): Promise<TestCase> =>
     request<TestCase>(`/projects/${projectId}/requirements/${requirementId}/test-cases/${testCaseId}/approve`, { method: "POST" }),
   rejectRequirementTestCase: (projectId: string, requirementId: string, testCaseId: string): Promise<TestCase> =>
-    request<TestCase>(`/projects/${projectId}/requirements/${requirementId}/test-cases/${testCaseId}/reject`, { method: "POST" })
+    request<TestCase>(`/projects/${projectId}/requirements/${requirementId}/test-cases/${testCaseId}/reject`, { method: "POST" }),
+  executeTestCase: (projectId: string, testCaseId: string, payload?: ExecutionTriggerInput): Promise<TestExecution> =>
+    request<TestExecution>(`/projects/${projectId}/test-cases/${testCaseId}/execute`, { method: "POST", body: payload ? JSON.stringify(payload) : undefined }),
+  getExecutions: (projectId: string, testCaseId?: string, limit = 50, offset = 0): Promise<ExecutionListResponse> =>
+    request<ExecutionListResponse>(collectionPath(`/projects/${projectId}/executions`, limit, offset, testCaseId ? { test_case_id: testCaseId } : {})),
+  getExecution: (projectId: string, executionId: string): Promise<TestExecution> =>
+    request<TestExecution>(`/projects/${projectId}/executions/${executionId}`),
+  getExecutionEvidence: (projectId: string, executionId: string, limit = 50, offset = 0): Promise<EvidenceListResponse> =>
+    request<EvidenceListResponse>(collectionPath(`/projects/${projectId}/executions/${executionId}/evidence`, limit, offset)),
+  getEvidenceDownloadUrl: (projectId: string, executionId: string, evidenceId: string): string =>
+    `${apiBaseUrl}/projects/${projectId}/executions/${executionId}/evidence/${evidenceId}/download`
 };

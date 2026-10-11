@@ -24,3 +24,7 @@ dist/
 Thumbs.db
 .idea/
 .vscode/
+
+# Local evidence storage (Phase 5)
+evidence_storage/
+backend/evidence_storage/

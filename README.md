@@ -121,6 +121,26 @@ Generated test cases are persisted in PostgreSQL with `review_status = "pending"
 - `POST /api/v1/projects/{project_id}/requirements/{requirement_id}/test-cases/{test_case_id}/approve` — Formally approve a test case.
 - `POST /api/v1/projects/{project_id}/requirements/{requirement_id}/test-cases/{test_case_id}/reject` — Reject a test case.
 
+## Phase 5 automated test execution engine
+
+The Test Execution Engine provides deterministic, safe, and audited test execution across three specialized adapters:
+
+- **PlaywrightWebRunner** (`test_type="web"`): Headless Chromium browser automation with controlled locator actions (`navigate`, `click`, `fill`, `select`, `assert_text`, `assert_visible`, `assert_url`) and automatic screenshot capture on step failure or completion.
+- **HttpxApiRunner** (`test_type="api"`): REST API test execution with method allowlist (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`), status code assertions, response body inspection, and SSRF prevention guards blocking cloud metadata and unapproved remote hosts.
+- **PytestRunner** (`test_type="manual"`): Deterministic sandboxed runner executing verified assertion templates without arbitrary script execution (`eval` or `exec`), emitting structured execution logs.
+
+### Approval & security boundaries:
+- **Approval Guard**: Test execution is strictly restricted to approved test cases (`review_status = "approved"` and `status = "approved"`). Attempting to execute pending or rejected test cases is blocked with HTTP 409 Conflict.
+- **SSRF Blocklist**: Target URLs are validated against `APPROVED_API_HOSTS` and blocked from accessing cloud metadata services (`169.254.169.254`, `metadata.google.internal`).
+- **Immutable Evidence**: Full execution history is persisted in `test_executions`, with binary artifacts (screenshots, logs, request/response JSON) stored on disk in `evidence_storage/` and referenced via `execution_evidence`.
+
+### Phase 5 API endpoints:
+- `POST /api/v1/projects/{project_id}/test-cases/{test_case_id}/execute` — Trigger automated test execution (optional body: `{"executor": "playwright" | "httpx" | "pytest"}`).
+- `GET /api/v1/projects/{project_id}/executions` — List execution history for the project (optional query filter: `test_case_id`, `status`).
+- `GET /api/v1/projects/{project_id}/executions/{execution_id}` — Get detailed execution record with step outcomes.
+- `GET /api/v1/projects/{project_id}/executions/{execution_id}/evidence` — List evidence artifacts for an execution.
+- `GET /api/v1/projects/{project_id}/executions/{execution_id}/evidence/{evidence_id}/download` — Stream or download raw screenshot or log evidence.
+
 ## Validation commands
 
 ```powershell
@@ -146,18 +166,16 @@ Project 1 ── * Requirement 1 ── * Test Case 1 ── * Test Execution
 
 - `requirements` are unique by project and title, and contain acceptance criteria.
 - `test_cases` are unique by requirement and title, versioned on permitted updates, retain structured preconditions and steps as JSONB, and track `review_status` (`pending`, `approved`, `rejected`).
-- `test_executions`, `execution_evidence`, and `defects` are append-oriented history records. They are read-only through the Phase 1 API because execution and analysis producers are later-phase work.
+- `test_executions`, `execution_evidence`, and `defects` are append-oriented history records. Executed cases are immutable.
 - UUID keys, indexed foreign keys/statuses, timezone-aware timestamps, PostgreSQL JSONB, unique constraints, and checked lifecycle values enforce durable, queryable data.
-- Foreign keys use `RESTRICT`; services additionally reject deletion of a project with requirements, a requirement with cases, or a case with executions. Executed cases are immutable.
+- Foreign keys use `RESTRICT`; services additionally reject deletion of a project with requirements, a requirement with cases, or a case with executions.
 
-Apply the complete schema, including the additive Phase 4 migration, with:
+Apply the complete schema, including the additive migrations, with:
 
 ```powershell
 Set-Location backend
 alembic upgrade head
 ```
-
-The migration is additive to the `test_cases` table (`review_status` defaults to `'pending'`) and does not rewrite or delete existing data.
 
 ## API overview
 
@@ -170,8 +188,8 @@ All endpoints are prefixed with `/api/v1` and documented in Swagger at `/docs`.
 | Requirement Analysis | `POST /projects/{project_id}/requirements/{requirement_id}/analysis` |
 | Test Case Generation & Review | `POST /projects/{project_id}/requirements/{requirement_id}/test-cases/generate`<br>`GET /projects/{project_id}/requirements/{requirement_id}/test-cases`<br>`GET/PATCH /projects/{project_id}/requirements/{requirement_id}/test-cases/{test_case_id}`<br>`POST .../{test_case_id}/approve`<br>`POST .../{test_case_id}/reject` |
 | Project Test Cases (CRUD) | `GET/POST /projects/{project_id}/test-cases`, `GET/PATCH/DELETE /projects/{project_id}/test-cases/{test_case_id}` |
-| Execution history | `GET /projects/{project_id}/executions`, `GET /projects/{project_id}/executions/{execution_id}` |
-| Execution evidence | `GET /projects/{project_id}/executions/{execution_id}/evidence` and `/{evidence_id}` |
+| Test Execution Engine | `POST /projects/{project_id}/test-cases/{test_case_id}/execute`<br>`GET /projects/{project_id}/executions`<br>`GET /projects/{project_id}/executions/{execution_id}` |
+| Execution Evidence | `GET /projects/{project_id}/executions/{execution_id}/evidence`<br>`GET .../evidence/{evidence_id}`<br>`GET .../evidence/{evidence_id}/download` |
 | Defects | `GET /projects/{project_id}/defects`, `GET /projects/{project_id}/defects/{defect_id}` |
 
 Collection endpoints accept `limit` (1–100) and `offset`; lifecycle filters are available where applicable. Nested resource queries always constrain the entity to the path's project, returning `404` for cross-project access.
@@ -191,4 +209,4 @@ The test fixture rejects names not ending in `_test`, creates only its schema th
 
 ## Current limitations
 
-This phase implements AI test case generation and human-in-the-loop review. It does not run browser/API tests, execute Playwright automation, use multi-step agent execution loops, use RAG/vector storage, or perform execution failure analysis (reserved for Phase 5 and beyond). PostgreSQL must be running with configured credentials for data APIs and migrations to work.
+Phase 5 implements the automated test execution engine, runners (Playwright, HTTPX, PyTest), evidence recording, and review-gated execution. It does not perform failure root-cause analysis, RAG/vector retrieval (Qdrant), multi-agent loops (LangGraph), or self-healing test automation (reserved for Phase 6 and beyond). PostgreSQL must be running with configured credentials for data APIs and migrations to work.
