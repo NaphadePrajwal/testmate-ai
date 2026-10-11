@@ -74,3 +74,56 @@ export interface RequirementAnalysisResponse {
   analysis: RequirementAnalysis;
   metadata: { provider: string; model: string; prompt_version: string; analyzed_at: string };
 }
+
+export type ReviewStatus = "pending" | "approved" | "rejected";
+export type TestCaseStatus = "draft" | "approved" | "retired";
+export type TestType = "web" | "api" | "manual";
+export type Priority = "low" | "medium" | "high" | "critical";
+
+export interface TestStep {
+  action: string;
+  expected_result?: string | null;
+  data?: Record<string, unknown>;
+}
+
+export interface TestCase {
+  id: string;
+  requirement_id: string;
+  title: string;
+  description: string | null;
+  preconditions: string[];
+  steps: TestStep[];
+  expected_result: string;
+  test_type: TestType;
+  priority: Priority;
+  status: TestCaseStatus;
+  review_status: ReviewStatus;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type TestCaseListResponse = PageResponse<TestCase>;
+
+export interface TestCaseUpdateInput {
+  title?: string;
+  description?: string | null;
+  preconditions?: string[];
+  steps?: TestStep[];
+  expected_result?: string;
+  test_type?: TestType;
+  priority?: Priority;
+}
+
+export interface GeneratedTestCasesResponse {
+  items: TestCase[];
+  total_generated: number;
+  requirement_coverage_summary: string;
+  assumptions: string[];
+  metadata: {
+    provider: string;
+    model: string;
+    prompt_version: string;
+    generated_at: string;
+  };
+}

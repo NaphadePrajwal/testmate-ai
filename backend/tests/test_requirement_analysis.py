@@ -83,7 +83,7 @@ def test_openai_provider_requires_configuration() -> None:
 
 
 def test_openai_provider_translates_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
-    provider = OpenAIResponsesProvider(Settings(openai_api_key="test-key"))
+    provider = OpenAIResponsesProvider(Settings(ai_provider="openai", openai_api_key="test-key"))
     monkeypatch.setattr(httpx, "post", lambda *_, **__: (_ for _ in ()).throw(httpx.TimeoutException("timeout")))
     requirement = Requirement(title="Checkout total", description="Calculate the checkout total.", acceptance_criteria=[])
     with pytest.raises(AnalysisProviderError):
@@ -235,7 +235,8 @@ def test_analysis_api_hides_invalid_provider_details(client: TestClient) -> None
         client.app.dependency_overrides.pop(get_requirement_analysis_service, None)
 
 
-def test_analysis_api_reports_missing_configuration_safely(client: TestClient) -> None:
+def test_analysis_api_reports_missing_configuration_safely(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.core.errors.get_settings", lambda: Settings(ai_provider="openai", openai_api_key=None))
     project = create_project(client, "Configuration analysis project")
     requirement = create_requirement(client, str(project["id"]), "Configuration requirement")
 

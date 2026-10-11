@@ -13,6 +13,12 @@ class TestCaseStatus(StrEnum):
     RETIRED = "retired"
 
 
+class ReviewStatus(StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
 class TestType(StrEnum):
     WEB = "web"
     API = "api"

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.dependencies import Pagination, pagination_params
 from app.db.session import get_db
-from app.models.enums import TestCaseStatus
+from app.models.enums import ReviewStatus, TestCaseStatus
 from app.schemas.test_case import TestCaseCreate, TestCaseListResponse, TestCaseRead, TestCaseUpdate
 from app.services.test_case_service import TestCaseService
 
@@ -19,10 +19,11 @@ def list_test_cases(
     page: Pagination = Depends(pagination_params),
     requirement_id: UUID | None = None,
     status_filter: Annotated[TestCaseStatus | None, Query(alias="status")] = None,
+    review_status_filter: Annotated[ReviewStatus | None, Query(alias="review_status")] = None,
     db: Session = Depends(get_db),
 ) -> TestCaseListResponse:
     items, total = TestCaseService(db).list_test_cases(
-        project_id, page.limit, page.offset, requirement_id, status_filter
+        project_id, page.limit, page.offset, requirement_id, status_filter, review_status_filter
     )
     return TestCaseListResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 

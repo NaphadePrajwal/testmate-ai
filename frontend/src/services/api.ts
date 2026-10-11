@@ -1,4 +1,5 @@
 import type {
+  GeneratedTestCasesResponse,
   HealthResponse,
   Project,
   ProjectInput,
@@ -6,7 +7,11 @@ import type {
   Requirement,
   RequirementAnalysisResponse,
   RequirementInput,
-  RequirementListResponse
+  RequirementListResponse,
+  ReviewStatus,
+  TestCase,
+  TestCaseListResponse,
+  TestCaseUpdateInput
 } from "../types/api";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -27,8 +32,9 @@ function errorMessage(payload: unknown): string {
   return "The API request failed.";
 }
 
-function collectionPath(path: string, limit: number, offset: number): string {
-  return `${path}?${new URLSearchParams({ limit: String(limit), offset: String(offset) })}`;
+function collectionPath(path: string, limit: number, offset: number, extraParams: Record<string, string> = {}): string {
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset), ...extraParams });
+  return `${path}?${params.toString()}`;
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -60,5 +66,17 @@ export const api = {
   createRequirement: (projectId: string, payload: RequirementInput): Promise<Requirement> => request<Requirement>(`/projects/${projectId}/requirements`, { method: "POST", body: JSON.stringify(payload) }),
   updateRequirement: (projectId: string, requirementId: string, payload: Partial<RequirementInput>): Promise<Requirement> => request<Requirement>(`/projects/${projectId}/requirements/${requirementId}`, { method: "PATCH", body: JSON.stringify(payload) }),
   deleteRequirement: (projectId: string, requirementId: string): Promise<void> => request<void>(`/projects/${projectId}/requirements/${requirementId}`, { method: "DELETE" }),
-  analyzeRequirement: (projectId: string, requirementId: string): Promise<RequirementAnalysisResponse> => request<RequirementAnalysisResponse>(`/projects/${projectId}/requirements/${requirementId}/analysis`, { method: "POST" })
+  analyzeRequirement: (projectId: string, requirementId: string): Promise<RequirementAnalysisResponse> => request<RequirementAnalysisResponse>(`/projects/${projectId}/requirements/${requirementId}/analysis`, { method: "POST" }),
+  getRequirementTestCases: (projectId: string, requirementId: string, limit = 50, offset = 0, reviewStatus?: ReviewStatus): Promise<TestCaseListResponse> =>
+    request<TestCaseListResponse>(collectionPath(`/projects/${projectId}/requirements/${requirementId}/test-cases`, limit, offset, reviewStatus ? { review_status: reviewStatus } : {})),
+  generateRequirementTestCases: (projectId: string, requirementId: string): Promise<GeneratedTestCasesResponse> =>
+    request<GeneratedTestCasesResponse>(`/projects/${projectId}/requirements/${requirementId}/test-cases/generate`, { method: "POST" }),
+  getRequirementTestCase: (projectId: string, requirementId: string, testCaseId: string): Promise<TestCase> =>
+    request<TestCase>(`/projects/${projectId}/requirements/${requirementId}/test-cases/${testCaseId}`),
+  updateRequirementTestCase: (projectId: string, requirementId: string, testCaseId: string, payload: TestCaseUpdateInput): Promise<TestCase> =>
+    request<TestCase>(`/projects/${projectId}/requirements/${requirementId}/test-cases/${testCaseId}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  approveRequirementTestCase: (projectId: string, requirementId: string, testCaseId: string): Promise<TestCase> =>
+    request<TestCase>(`/projects/${projectId}/requirements/${requirementId}/test-cases/${testCaseId}/approve`, { method: "POST" }),
+  rejectRequirementTestCase: (projectId: string, requirementId: string, testCaseId: string): Promise<TestCase> =>
+    request<TestCase>(`/projects/${projectId}/requirements/${requirementId}/test-cases/${testCaseId}/reject`, { method: "POST" })
 };

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import Field
 
-from app.models.enums import Priority, TestCaseStatus, TestType
+from app.models.enums import Priority, ReviewStatus, TestCaseStatus, TestType
 from app.schemas.common import APIModel, PageMeta
 
 
@@ -24,6 +24,7 @@ class TestCaseCreate(APIModel):
     test_type: TestType
     priority: Priority = Priority.MEDIUM
     status: TestCaseStatus = TestCaseStatus.DRAFT
+    review_status: ReviewStatus = ReviewStatus.PENDING
 
 
 class TestCaseUpdate(APIModel):
@@ -35,6 +36,7 @@ class TestCaseUpdate(APIModel):
     test_type: TestType | None = None
     priority: Priority | None = None
     status: TestCaseStatus | None = None
+    review_status: ReviewStatus | None = None
 
 
 class TestCaseRead(APIModel):
@@ -50,6 +52,7 @@ class TestCaseRead(APIModel):
     test_type: TestType
     priority: Priority
     status: TestCaseStatus
+    review_status: ReviewStatus
     version: int
     created_at: datetime
     updated_at: datetime

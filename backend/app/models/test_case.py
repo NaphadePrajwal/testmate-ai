@@ -7,7 +7,7 @@ from sqlalchemy.dialects.postgresql import JSONB, UUID as PostgreSQLUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.session import Base
-from app.models.enums import Priority, TestCaseStatus, TestType, enum_values
+from app.models.enums import Priority, ReviewStatus, TestCaseStatus, TestType, enum_values
 
 
 class TestCase(Base):
@@ -38,6 +38,13 @@ class TestCase(Base):
         Enum(TestCaseStatus, native_enum=False, create_constraint=True, values_callable=enum_values),
         nullable=False,
         default=TestCaseStatus.DRAFT,
+        index=True,
+    )
+    review_status: Mapped[ReviewStatus] = mapped_column(
+        Enum(ReviewStatus, native_enum=False, create_constraint=True, values_callable=enum_values),
+        nullable=False,
+        default=ReviewStatus.PENDING,
+        server_default=ReviewStatus.PENDING.value,
         index=True,
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

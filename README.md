@@ -102,6 +102,25 @@ ANALYSIS_TIMEOUT_SECONDS=30
 
 The endpoint is `POST /api/v1/projects/{project_id}/requirements/{requirement_id}/analysis`. It returns a validated analysis plus provider/model and prompt-version metadata; it returns a safe configuration or provider error when analysis cannot run. The application does not provide generated analysis when a provider is not configured.
 
+## Phase 4 AI test-case generation and review workflow
+
+Use **Test Cases** on any requirement to inspect, generate, and manage test cases. The AI Test-Case Generation Agent generates positive, negative, boundary/edge cases with preconditions, ordered steps, synthetic test data, and observable expected results.
+
+Generated test cases are persisted in PostgreSQL with `review_status = "pending"`:
+- Users can review, edit, approve, or reject cases.
+- Editing an unexecuted case preserves its `pending` status without auto-approving.
+- Approving sets `review_status = "approved"` and `status = "approved"` (eligible for execution).
+- Rejecting sets `review_status = "rejected"` and `status = "retired"`.
+- Review transitions are enforced on the backend (`pending -> approved` or `pending -> rejected`).
+
+### Phase 4 API endpoints:
+- `POST /api/v1/projects/{project_id}/requirements/{requirement_id}/test-cases/generate` — Generate structured test cases using AI.
+- `GET /api/v1/projects/{project_id}/requirements/{requirement_id}/test-cases` — List test cases for a requirement with optional `review_status` filter.
+- `GET /api/v1/projects/{project_id}/requirements/{requirement_id}/test-cases/{test_case_id}` — Get a specific test case.
+- `PATCH /api/v1/projects/{project_id}/requirements/{requirement_id}/test-cases/{test_case_id}` — Update test case specifications.
+- `POST /api/v1/projects/{project_id}/requirements/{requirement_id}/test-cases/{test_case_id}/approve` — Formally approve a test case.
+- `POST /api/v1/projects/{project_id}/requirements/{requirement_id}/test-cases/{test_case_id}/reject` — Reject a test case.
+
 ## Validation commands
 
 ```powershell
@@ -126,19 +145,19 @@ Project 1 ── * Requirement 1 ── * Test Case 1 ── * Test Execution
 ```
 
 - `requirements` are unique by project and title, and contain acceptance criteria.
-- `test_cases` are unique by requirement and title, versioned on permitted updates, and retain structured preconditions and steps as JSONB.
+- `test_cases` are unique by requirement and title, versioned on permitted updates, retain structured preconditions and steps as JSONB, and track `review_status` (`pending`, `approved`, `rejected`).
 - `test_executions`, `execution_evidence`, and `defects` are append-oriented history records. They are read-only through the Phase 1 API because execution and analysis producers are later-phase work.
 - UUID keys, indexed foreign keys/statuses, timezone-aware timestamps, PostgreSQL JSONB, unique constraints, and checked lifecycle values enforce durable, queryable data.
 - Foreign keys use `RESTRICT`; services additionally reject deletion of a project with requirements, a requirement with cases, or a case with executions. Executed cases are immutable.
 
-Apply the complete schema, including the additive Phase 1 migration, with:
+Apply the complete schema, including the additive Phase 4 migration, with:
 
 ```powershell
 Set-Location backend
 alembic upgrade head
 ```
 
-The migration is additive to the Phase 0 `projects` table and does not rewrite or delete its data.
+The migration is additive to the `test_cases` table (`review_status` defaults to `'pending'`) and does not rewrite or delete existing data.
 
 ## API overview
 
@@ -148,7 +167,9 @@ All endpoints are prefixed with `/api/v1` and documented in Swagger at `/docs`.
 | --- | --- |
 | Projects | `GET/POST /projects`, `GET/PATCH/DELETE /projects/{project_id}` |
 | Requirements | `GET/POST /projects/{project_id}/requirements`, `GET/PATCH/DELETE /projects/{project_id}/requirements/{requirement_id}` |
-| Test cases | `GET/POST /projects/{project_id}/test-cases`, `GET/PATCH/DELETE /projects/{project_id}/test-cases/{test_case_id}` |
+| Requirement Analysis | `POST /projects/{project_id}/requirements/{requirement_id}/analysis` |
+| Test Case Generation & Review | `POST /projects/{project_id}/requirements/{requirement_id}/test-cases/generate`<br>`GET /projects/{project_id}/requirements/{requirement_id}/test-cases`<br>`GET/PATCH /projects/{project_id}/requirements/{requirement_id}/test-cases/{test_case_id}`<br>`POST .../{test_case_id}/approve`<br>`POST .../{test_case_id}/reject` |
+| Project Test Cases (CRUD) | `GET/POST /projects/{project_id}/test-cases`, `GET/PATCH/DELETE /projects/{project_id}/test-cases/{test_case_id}` |
 | Execution history | `GET /projects/{project_id}/executions`, `GET /projects/{project_id}/executions/{execution_id}` |
 | Execution evidence | `GET /projects/{project_id}/executions/{execution_id}/evidence` and `/{evidence_id}` |
 | Defects | `GET /projects/{project_id}/defects`, `GET /projects/{project_id}/defects/{defect_id}` |
@@ -170,4 +191,4 @@ The test fixture rejects names not ending in `_test`, creates only its schema th
 
 ## Current limitations
 
-This phase does not generate test cases, run browser/API tests, use multi-step agent frameworks, use RAG/vector storage, or perform execution failure analysis. It intentionally does not expose write endpoints for execution, evidence, or defect records; their controlled producers will be introduced in later phases. PostgreSQL must be running with configured credentials for data APIs and migrations to work.
+This phase implements AI test case generation and human-in-the-loop review. It does not run browser/API tests, execute Playwright automation, use multi-step agent execution loops, use RAG/vector storage, or perform execution failure analysis (reserved for Phase 5 and beyond). PostgreSQL must be running with configured credentials for data APIs and migrations to work.
