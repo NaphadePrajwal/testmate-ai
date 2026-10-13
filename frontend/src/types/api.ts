@@ -130,6 +130,35 @@ export interface GeneratedTestCasesResponse {
 
 export type ExecutionStatus = "queued" | "running" | "passed" | "failed" | "error" | "cancelled";
 export type EvidenceType = "screenshot" | "video" | "log" | "trace" | "request_response";
+export type DefectSeverity = "low" | "medium" | "high" | "critical";
+export type DefectStatus = "new" | "triaged" | "in_progress" | "resolved" | "closed" | "rejected";
+
+export interface Defect {
+  id: string;
+  execution_id: string;
+  title: string;
+  description?: string | null;
+  severity: DefectSeverity;
+  status: DefectStatus;
+  fingerprint?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TestCaseSnapshot {
+  test_case_id: string;
+  title: string;
+  version: number;
+  test_type: string;
+  priority: string;
+  preconditions?: string[];
+  steps?: TestStep[];
+  expected_result: string;
+  requirement_id: string;
+  requirement_title?: string | null;
+  project_id?: string | null;
+  snapshot_at: string;
+}
 
 export interface StepExecutionResult {
   step_index: number;
@@ -137,8 +166,11 @@ export interface StepExecutionResult {
   status: "passed" | "failed" | "error" | "skipped";
   expected?: string | null;
   actual?: string | null;
-  duration_ms: number;
+  expected_result?: string | null;
+  actual_result?: string | null;
+  duration_ms?: number;
   error_message?: string | null;
+  error_details?: string | null;
   details?: Record<string, unknown>;
 }
 
@@ -146,10 +178,17 @@ export interface ExecutionSummary {
   total_steps: number;
   passed_steps: number;
   failed_steps: number;
-  error_steps: number;
+  error_steps?: number;
   skipped_steps: number;
-  total_duration_ms: number;
-  step_results: StepExecutionResult[];
+  duration_ms?: number;
+  total_duration_ms?: number;
+  error_category?: string | null;
+  failed_step_index?: number | null;
+  failure_explanation?: string | null;
+  sanitized_failure_reason?: string | null;
+  evidence_count?: number;
+  step_results?: StepExecutionResult[];
+  test_case_snapshot?: TestCaseSnapshot | null;
 }
 
 export interface TestExecution {
@@ -182,4 +221,48 @@ export type EvidenceListResponse = PageResponse<ExecutionEvidence>;
 
 export interface ExecutionTriggerInput {
   executor?: "playwright" | "httpx" | "pytest";
+}
+
+export interface ExecutionDetailResponse {
+  id: string;
+  test_case_id: string;
+  status: ExecutionStatus;
+  executor?: string | null;
+  run_reference?: string | null;
+  error_message?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at: string;
+  test_case_snapshot?: TestCaseSnapshot | null;
+  summary: ExecutionSummary;
+  step_results: StepExecutionResult[];
+  evidence: ExecutionEvidence[];
+  evidence_items?: ExecutionEvidence[];
+  defects?: Defect[];
+}
+
+export interface ExecutionFailureContext {
+  execution_id: string;
+  test_case_id: string;
+  requirement_id: string;
+  project_id: string;
+  test_case_title: string;
+  test_case_version: number;
+  test_type: string;
+  status: ExecutionStatus;
+  executor?: string | null;
+  error_category?: string | null;
+  error_message?: string | null;
+  failed_step_index?: number | null;
+  sanitized_failure_reason?: string | null;
+  failed_step?: StepExecutionResult | null;
+  steps: StepExecutionResult[];
+  step_results: StepExecutionResult[];
+  test_case_snapshot?: TestCaseSnapshot | null;
+  logs: string[];
+  evidence_references: Record<string, unknown>[];
+  evidence: ExecutionEvidence[];
+  defects: Defect[];
+  duration_ms: number;
+  timestamp: string;
 }

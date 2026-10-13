@@ -12,7 +12,7 @@ from app.core.config import Settings, get_settings
 from app.models.enums import ExecutionStatus
 from app.models.test_case import TestCase
 from app.testing.contract import ExecutionOutcome, StepExecutionResult
-from app.testing.evidence_manager import EvidenceManager
+from app.testing.evidence_manager import EvidenceManager, sanitize_log_text, sanitize_url_string
 
 
 BLOCKED_HOSTS = {
@@ -168,33 +168,36 @@ class HttpxApiRunner:
                     step_results.append(
                         StepExecutionResult(
                             step_index=idx,
-                            action=f"{method} {url_str}",
+                            action=sanitize_url_string(f"{method} {url_str}"),
                             status=step_status,
                             expected=f"HTTP {expected_status}",
                             actual=actual_summary,
                             duration_ms=round(step_duration, 2),
-                            error_message=err_msg,
-                            details={"status_code": response.status_code, "target_url": target_url},
+                            error_message=sanitize_log_text(err_msg) if err_msg else None,
+                            details={"status_code": response.status_code, "target_url": sanitize_url_string(target_url)},
                         )
                     )
 
                 except Exception as exc:
                     step_duration = (time.perf_counter() - step_start) * 1000
                     overall_status = ExecutionStatus.ERROR
-                    err_msg = str(exc)
+                    err_msg = sanitize_log_text(str(exc))
                     if not first_error_message:
                         first_error_message = err_msg
 
                     step_results.append(
                         StepExecutionResult(
                             step_index=idx,
-                            action=action_text,
+                            action=sanitize_url_string(action_text),
                             status="error",
                             expected=expected_text,
                             actual="Execution encountered error",
                             duration_ms=round(step_duration, 2),
                             error_message=err_msg,
-                            details={"exception": type(exc).__name__},
+                            details={
+                                "exception": type(exc).__name__,
+                                "target_url": sanitize_url_string(target_url) if "target_url" in locals() else None,
+                            },
                         )
                     )
                     break

@@ -16,6 +16,8 @@ from app.schemas.execution import (
     DefectRead,
     EvidenceListResponse,
     EvidenceRead,
+    ExecutionDetailResponse,
+    ExecutionFailureContext,
     ExecutionListResponse,
     ExecutionRead,
     ExecutionTriggerRequest,
@@ -55,9 +57,49 @@ def list_executions(
     return ExecutionListResponse(items=items, total=total, limit=page.limit, offset=page.offset)
 
 
+@router.get(
+    "/test-cases/{test_case_id}/history",
+    response_model=ExecutionListResponse,
+    summary="List execution history for a specific test case",
+)
+def list_test_case_history(
+    project_id: UUID,
+    test_case_id: UUID,
+    page: Pagination = Depends(pagination_params),
+    status_filter: Annotated[ExecutionStatus | None, Query(alias="status")] = None,
+    db: Session = Depends(get_db),
+) -> ExecutionListResponse:
+    items, total = ExecutionService(db).list_test_case_history(
+        project_id, test_case_id, page.limit, page.offset, status_filter
+    )
+    return ExecutionListResponse(items=items, total=total, limit=page.limit, offset=page.offset)
+
+
 @router.get("/executions/{execution_id}", response_model=ExecutionRead, summary="Get an execution record")
 def get_execution(project_id: UUID, execution_id: UUID, db: Session = Depends(get_db)) -> ExecutionRead:
     return ExecutionService(db).get_execution(project_id, execution_id)
+
+
+@router.get(
+    "/executions/{execution_id}/detail",
+    response_model=ExecutionDetailResponse,
+    summary="Get full structured execution details with step results, snapshot, evidence, and defects",
+)
+def get_execution_detail(
+    project_id: UUID, execution_id: UUID, db: Session = Depends(get_db)
+) -> ExecutionDetailResponse:
+    return ExecutionService(db).get_execution_detail(project_id, execution_id)
+
+
+@router.get(
+    "/executions/{execution_id}/analysis-context",
+    response_model=ExecutionFailureContext,
+    summary="Get stable execution and failure context prepared for Phase 7 AI failure analysis",
+)
+def get_execution_for_analysis(
+    project_id: UUID, execution_id: UUID, db: Session = Depends(get_db)
+) -> ExecutionFailureContext:
+    return ExecutionService(db).get_execution_for_analysis(project_id, execution_id)
 
 
 @router.get(
@@ -92,9 +134,9 @@ def download_evidence_file(
     evidence = ExecutionService(db).get_evidence(project_id, execution_id, evidence_id)
     settings = get_settings()
     base_dir = Path(settings.evidence_storage_dir).resolve()
-    file_path = base_dir / evidence.uri
+    file_path = (base_dir / evidence.uri).resolve()
 
-    if not file_path.is_file():
+    if not file_path.is_relative_to(base_dir) or not file_path.is_file():
         raise ResourceNotFoundError("Evidence file not found on disk.")
 
     return FileResponse(

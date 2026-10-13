@@ -139,7 +139,40 @@ The Test Execution Engine provides deterministic, safe, and audited test executi
 - `GET /api/v1/projects/{project_id}/executions` — List execution history for the project (optional query filter: `test_case_id`, `status`).
 - `GET /api/v1/projects/{project_id}/executions/{execution_id}` — Get detailed execution record with step outcomes.
 - `GET /api/v1/projects/{project_id}/executions/{execution_id}/evidence` — List evidence artifacts for an execution.
-- `GET /api/v1/projects/{project_id}/executions/{execution_id}/evidence/{evidence_id}/download` — Stream or download raw screenshot or log evidence.
+- `GET /api/v1/projects/{project_id}/executions/{evidence_id}/download` — Stream or download raw screenshot or log evidence.
+
+## Phase 6 Test Results and Evidence Management
+
+Phase 6 delivers a centralized, immutable test-results and evidence-management layer that guarantees every test run is traceable, inspectable, and safely organized for subsequent AI failure analysis.
+
+### Core Capabilities & Architecture
+
+1. **Execution-Time Test Case Snapshots**:
+   - Every execution captures an immutable `test_case_snapshot` in PostgreSQL (`TestExecution.summary["test_case_snapshot"]`).
+   - If the original test case is subsequently edited or version-bumped, past execution results remain historically accurate and reproducible.
+2. **Standardized Execution Summaries & Error Categorization**:
+   - Structured step counts (passed, failed, skipped, total).
+   - Automated error classification via `ErrorCategory` (`assertion_failure`, `timeout`, `element_not_found`, `security_violation`, `infrastructure_error`, `unspecified`).
+   - Pinpoints `failed_step_index` and preserves sanitized failure explanations.
+3. **Evidence Integrity & Storage Security**:
+   - Strict path containment checks (`is_relative_to(base_dir)`) prevent path traversal during file downloads.
+   - Cross-project isolation: users cannot access or download evidence belonging to another project.
+   - Sensitive data scrubbing: `sanitize_sensitive_data` automatically redacts credentials, passwords, tokens, API keys, and session cookies from diagnostic payloads.
+   - SHA-256 checksum and byte size tracking for every stored artifact.
+4. **Stable Phase 7 Data Contract**:
+   - `GET /executions/{execution_id}/analysis-context` exposes `ExecutionFailureContext`, providing the AI Failure Analysis agent with structured step results, expected vs observed outputs, snapshot metadata, error category, sanitized logs, and verified evidence references without ad-hoc table joins.
+5. **Interactive Frontend Results Interface**:
+   - Detailed modal with chronological execution history and clear distinction between latest and historical runs.
+   - Visual comparison of expected vs observed behavior for every step.
+   - Screenshot preview thumbnails with fullscreen modal viewer and secure direct downloads.
+   - Historical snapshot indicators displaying the executed version alongside current test case version.
+
+### Phase 6 API Endpoints
+
+- `GET /api/v1/projects/{project_id}/executions/{execution_id}/detail` — Retrieve full structured execution details with step results, snapshot, evidence, and defects.
+- `GET /api/v1/projects/{project_id}/executions/{execution_id}/analysis-context` — Stable failure context contract for Phase 7 AI failure analysis.
+- `GET /api/v1/projects/{project_id}/test-cases/{test_case_id}/history` — List chronological execution history for a specific test case with pagination.
+- `GET /api/v1/projects/{project_id}/executions/{execution_id}/evidence/{evidence_id}/download` — Download authorized evidence file with path-containment validation.
 
 ## Validation commands
 
@@ -189,6 +222,7 @@ All endpoints are prefixed with `/api/v1` and documented in Swagger at `/docs`.
 | Test Case Generation & Review | `POST /projects/{project_id}/requirements/{requirement_id}/test-cases/generate`<br>`GET /projects/{project_id}/requirements/{requirement_id}/test-cases`<br>`GET/PATCH /projects/{project_id}/requirements/{requirement_id}/test-cases/{test_case_id}`<br>`POST .../{test_case_id}/approve`<br>`POST .../{test_case_id}/reject` |
 | Project Test Cases (CRUD) | `GET/POST /projects/{project_id}/test-cases`, `GET/PATCH/DELETE /projects/{project_id}/test-cases/{test_case_id}` |
 | Test Execution Engine | `POST /projects/{project_id}/test-cases/{test_case_id}/execute`<br>`GET /projects/{project_id}/executions`<br>`GET /projects/{project_id}/executions/{execution_id}` |
+| Test Results & Failure Analysis (Phase 6) | `GET /projects/{project_id}/executions/{execution_id}/detail`<br>`GET /projects/{project_id}/executions/{execution_id}/analysis-context`<br>`GET /projects/{project_id}/test-cases/{test_case_id}/history` |
 | Execution Evidence | `GET /projects/{project_id}/executions/{execution_id}/evidence`<br>`GET .../evidence/{evidence_id}`<br>`GET .../evidence/{evidence_id}/download` |
 | Defects | `GET /projects/{project_id}/defects`, `GET /projects/{project_id}/defects/{defect_id}` |
 
@@ -209,4 +243,4 @@ The test fixture rejects names not ending in `_test`, creates only its schema th
 
 ## Current limitations
 
-Phase 5 implements the automated test execution engine, runners (Playwright, HTTPX, PyTest), evidence recording, and review-gated execution. It does not perform failure root-cause analysis, RAG/vector retrieval (Qdrant), multi-agent loops (LangGraph), or self-healing test automation (reserved for Phase 6 and beyond). PostgreSQL must be running with configured credentials for data APIs and migrations to work.
+Phase 6 implements complete test results, snapshots, evidence security/containment, and historical run management. It does not perform AI root-cause failure analysis (Phase 7), Qdrant vector retrieval/RAG (Phase 8), LangGraph multi-agent orchestration (Phase 9), intelligent test reporting (Phase 10), or self-healing test automation (Phase 12).

@@ -1,5 +1,7 @@
 import type {
   EvidenceListResponse,
+  ExecutionDetailResponse,
+  ExecutionFailureContext,
   ExecutionListResponse,
   ExecutionTriggerInput,
   GeneratedTestCasesResponse,
@@ -89,6 +91,12 @@ export const api = {
     request<ExecutionListResponse>(collectionPath(`/projects/${projectId}/executions`, limit, offset, testCaseId ? { test_case_id: testCaseId } : {})),
   getExecution: (projectId: string, executionId: string): Promise<TestExecution> =>
     request<TestExecution>(`/projects/${projectId}/executions/${executionId}`),
+  getExecutionDetail: (projectId: string, executionId: string): Promise<ExecutionDetailResponse> =>
+    request<ExecutionDetailResponse>(`/projects/${projectId}/executions/${executionId}/detail`),
+  getExecutionAnalysisContext: (projectId: string, executionId: string): Promise<ExecutionFailureContext> =>
+    request<ExecutionFailureContext>(`/projects/${projectId}/executions/${executionId}/analysis-context`),
+  getTestCaseHistory: (projectId: string, testCaseId: string, limit = 50, offset = 0): Promise<ExecutionListResponse> =>
+    request<ExecutionListResponse>(collectionPath(`/projects/${projectId}/test-cases/${testCaseId}/history`, limit, offset)),
   getExecutionEvidence: (projectId: string, executionId: string, limit = 50, offset = 0): Promise<EvidenceListResponse> =>
     request<EvidenceListResponse>(collectionPath(`/projects/${projectId}/executions/${executionId}/evidence`, limit, offset)),
   getEvidenceDownloadUrl: (projectId: string, executionId: string, evidenceId: string): string =>
