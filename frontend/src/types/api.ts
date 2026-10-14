@@ -34,6 +34,7 @@ export interface Requirement {
   project_id: string;
   title: string;
   description: string;
+  target_url?: string | null;
   status: RequirementStatus;
   acceptance_criteria: string[];
   created_at: string;
@@ -45,6 +46,7 @@ export type RequirementListResponse = PageResponse<Requirement>;
 export interface RequirementInput {
   title: string;
   description: string;
+  target_url?: string | null;
   status: RequirementStatus;
   acceptance_criteria: string[];
 }
@@ -91,6 +93,7 @@ export interface TestCase {
   requirement_id: string;
   title: string;
   description: string | null;
+  target_url?: string | null;
   preconditions: string[];
   steps: TestStep[];
   expected_result: string;
@@ -108,6 +111,7 @@ export type TestCaseListResponse = PageResponse<TestCase>;
 export interface TestCaseUpdateInput {
   title?: string;
   description?: string | null;
+  target_url?: string | null;
   preconditions?: string[];
   steps?: TestStep[];
   expected_result?: string;
@@ -151,6 +155,7 @@ export interface TestCaseSnapshot {
   version: number;
   test_type: string;
   priority: string;
+  target_url?: string | null;
   preconditions?: string[];
   steps?: TestStep[];
   expected_result: string;
@@ -266,3 +271,42 @@ export interface ExecutionFailureContext {
   duration_ms: number;
   timestamp: string;
 }
+
+export type FailureCategory =
+  | "assertion_failure"
+  | "application_error"
+  | "timeout"
+  | "network_error"
+  | "element_not_found"
+  | "security_violation"
+  | "infrastructure_error"
+  | "unknown";
+
+export type ConfidenceLevel = "high" | "medium" | "low";
+
+export interface FailureAnalysisMetadata {
+  provider?: string;
+  model?: string;
+  prompt_version?: string;
+  analyzed_at?: string;
+  [key: string]: unknown;
+}
+
+export interface FailureAnalysis {
+  id: string;
+  execution_id: string;
+  project_id: string;
+  failure_category: FailureCategory | string;
+  summary: string;
+  observed_error: string;
+  likely_root_cause: string;
+  supporting_evidence: string[];
+  recommended_debugging_steps: string[];
+  confidence: ConfidenceLevel | string;
+  uncertainty_notes?: string | null;
+  metadata: FailureAnalysisMetadata;
+  created_at: string;
+  updated_at: string;
+}
+
+export type FailureAnalysisListResponse = PageResponse<FailureAnalysis>;

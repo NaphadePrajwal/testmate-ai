@@ -10,11 +10,13 @@ from app.models.enums import EvidenceType, ExecutionStatus
 
 class ErrorCategory(StrEnum):
     ASSERTION_FAILURE = "assertion_failure"
+    APPLICATION_ERROR = "application_error"
     TIMEOUT = "timeout"
     NETWORK_ERROR = "network_error"
     ELEMENT_NOT_FOUND = "element_not_found"
     SECURITY_VIOLATION = "security_violation"
     INFRASTRUCTURE_ERROR = "infrastructure_error"
+    UNKNOWN = "unknown"
     UNSPECIFIED = "unspecified"
 
 
@@ -24,6 +26,7 @@ class TestCaseSnapshot(BaseModel):
     version: int = 1
     test_type: str
     priority: str
+    target_url: str | None = None
     preconditions: list[str] = Field(default_factory=list)
     steps: list[dict[str, Any]] = Field(default_factory=list)
     expected_result: str
@@ -36,9 +39,12 @@ class TestCaseSnapshot(BaseModel):
     def from_test_case(cls, test_case: Any) -> "TestCaseSnapshot":
         project_id = None
         req_title = None
+        target_url = getattr(test_case, "target_url", None)
         if hasattr(test_case, "requirement") and test_case.requirement:
             project_id = getattr(test_case.requirement, "project_id", None)
             req_title = getattr(test_case.requirement, "title", None)
+            if not target_url:
+                target_url = getattr(test_case.requirement, "target_url", None)
 
         test_type_str = (
             test_case.test_type.value
@@ -57,6 +63,7 @@ class TestCaseSnapshot(BaseModel):
             version=getattr(test_case, "version", 1),
             test_type=test_type_str,
             priority=priority_str,
+            target_url=target_url,
             preconditions=list(test_case.preconditions or []),
             steps=list(test_case.steps or []),
             expected_result=test_case.expected_result,

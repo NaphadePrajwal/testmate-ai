@@ -21,6 +21,7 @@ class Requirement(Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    target_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     status: Mapped[RequirementStatus] = mapped_column(
         Enum(RequirementStatus, native_enum=False, create_constraint=True, values_callable=enum_values),
         nullable=False,

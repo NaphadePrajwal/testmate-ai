@@ -225,6 +225,7 @@ def test_playwright_runner_mock_flow() -> None:
         title="Web Navigation Test",
         expected_result="Page loaded",
         test_type=TestType.WEB,
+        target_url="http://localhost:5173",
         steps=[
             {"action": "Navigate to home", "expected_result": "Home displayed", "data": {"action": "navigate", "url": "/"}},
             {"action": "Check title visible", "expected_result": "Title is visible", "data": {"action": "assert_visible", "selector": "body"}},

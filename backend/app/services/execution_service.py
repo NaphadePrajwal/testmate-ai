@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 from pathlib import Path
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import Settings, get_settings
 from app.core.exceptions import ResourceConflictError, ResourceNotFoundError
@@ -145,6 +145,7 @@ class ExecutionService:
 
         test_case = self.db.scalar(
             select(TestCase)
+            .options(joinedload(TestCase.requirement))
             .join(Requirement)
             .where(TestCase.id == test_case_id, Requirement.project_id == project_id)
         )

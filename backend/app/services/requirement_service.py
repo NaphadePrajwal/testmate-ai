@@ -4,6 +4,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceConflictError, ResourceNotFoundError
+from app.core.url_utils import extract_target_url
 from app.models.requirement import Requirement
 from app.models.test_case import TestCase
 from app.schemas.requirement import RequirementCreate, RequirementUpdate
@@ -36,14 +37,31 @@ class RequirementService:
 
     def create_requirement(self, project_id: UUID, payload: RequirementCreate) -> Requirement:
         ProjectService(self.db).get_project(project_id)
-        requirement = Requirement(project_id=project_id, **payload.model_dump())
+        data = payload.model_dump()
+        if not data.get("target_url"):
+            extracted = extract_target_url(data.get("description"))
+            if not extracted and data.get("acceptance_criteria"):
+                for ac in data["acceptance_criteria"]:
+                    extracted = extract_target_url(ac)
+                    if extracted:
+                        break
+            if extracted:
+                data["target_url"] = extracted
+
+        requirement = Requirement(project_id=project_id, **data)
         self.db.add(requirement)
         commit_and_refresh(self.db, requirement)
         return requirement
 
     def update_requirement(self, project_id: UUID, requirement_id: UUID, payload: RequirementUpdate) -> Requirement:
         requirement = self.get_requirement(project_id, requirement_id)
-        for field, value in payload.model_dump(exclude_unset=True).items():
+        data = payload.model_dump(exclude_unset=True)
+        if "target_url" in data and not data["target_url"]:
+            desc = data.get("description", requirement.description)
+            extracted = extract_target_url(desc)
+            if extracted:
+                data["target_url"] = extracted
+        for field, value in data.items():
             setattr(requirement, field, value)
         commit_and_refresh(self.db, requirement)
         return requirement

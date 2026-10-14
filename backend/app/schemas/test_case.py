@@ -18,6 +18,7 @@ class TestCaseCreate(APIModel):
     requirement_id: UUID
     title: str = Field(min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=50_000)
+    target_url: str | None = Field(default=None, max_length=2048)
     preconditions: list[str] = Field(default_factory=list, max_length=100)
     steps: list[TestStep] = Field(default_factory=list, max_length=200)
     expected_result: str = Field(min_length=1, max_length=50_000)
@@ -30,6 +31,7 @@ class TestCaseCreate(APIModel):
 class TestCaseUpdate(APIModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=50_000)
+    target_url: str | None = Field(default=None, max_length=2048)
     preconditions: list[str] | None = Field(default=None, max_length=100)
     steps: list[TestStep] | None = Field(default=None, max_length=200)
     expected_result: str | None = Field(default=None, min_length=1, max_length=50_000)
@@ -46,6 +48,7 @@ class TestCaseRead(APIModel):
     requirement_id: UUID
     title: str
     description: str | None
+    target_url: str | None = None
     preconditions: list[str]
     steps: list[TestStep]
     expected_result: str

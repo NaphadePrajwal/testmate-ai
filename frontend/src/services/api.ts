@@ -17,7 +17,9 @@ import type {
   TestCase,
   TestCaseListResponse,
   TestCaseUpdateInput,
-  TestExecution
+  TestExecution,
+  FailureAnalysis,
+  FailureAnalysisListResponse
 } from "../types/api";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -100,5 +102,15 @@ export const api = {
   getExecutionEvidence: (projectId: string, executionId: string, limit = 50, offset = 0): Promise<EvidenceListResponse> =>
     request<EvidenceListResponse>(collectionPath(`/projects/${projectId}/executions/${executionId}/evidence`, limit, offset)),
   getEvidenceDownloadUrl: (projectId: string, executionId: string, evidenceId: string): string =>
-    `${apiBaseUrl}/projects/${projectId}/executions/${executionId}/evidence/${evidenceId}/download`
+    `${apiBaseUrl}/projects/${projectId}/executions/${executionId}/evidence/${evidenceId}/download`,
+  getExecutionFailureAnalysis: (projectId: string, executionId: string): Promise<FailureAnalysis> =>
+    request<FailureAnalysis>(`/projects/${projectId}/executions/${executionId}/analysis`),
+  requestExecutionFailureAnalysis: (projectId: string, executionId: string, force = false): Promise<FailureAnalysis> =>
+    request<FailureAnalysis>(`/projects/${projectId}/executions/${executionId}/analysis${force ? "?force=true" : ""}`, {
+      method: "POST",
+    }),
+  getFailureAnalyses: (projectId: string, category?: string, limit = 50, offset = 0): Promise<FailureAnalysisListResponse> =>
+    request<FailureAnalysisListResponse>(
+      collectionPath(`/projects/${projectId}/failure-analyses`, limit, offset, category ? { category } : {})
+    )
 };

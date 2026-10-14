@@ -34,3 +34,6 @@ class TestExecution(Base):
     test_case: Mapped["TestCase"] = relationship(back_populates="executions")
     evidence_items: Mapped[list["ExecutionEvidence"]] = relationship(back_populates="execution", passive_deletes=True)
     defects: Mapped[list["Defect"]] = relationship(back_populates="execution", passive_deletes=True)
+    failure_analysis: Mapped["ExecutionFailureAnalysis | None"] = relationship(
+        back_populates="execution", uselist=False, passive_deletes=True
+    )

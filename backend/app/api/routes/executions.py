@@ -22,7 +22,13 @@ from app.schemas.execution import (
     ExecutionRead,
     ExecutionTriggerRequest,
 )
+from app.schemas.failure_analysis import (
+    ExecutionFailureAnalysisListResponse,
+    ExecutionFailureAnalysisRead,
+    FailureCategory,
+)
 from app.services.execution_service import ExecutionService
+from app.services.failure_analysis_service import FailureAnalysisService
 
 router = APIRouter()
 
@@ -161,3 +167,56 @@ def list_defects(
 @router.get("/defects/{defect_id}", response_model=DefectRead, summary="Get a defect")
 def get_defect(project_id: UUID, defect_id: UUID, db: Session = Depends(get_db)) -> DefectRead:
     return ExecutionService(db).get_defect(project_id, defect_id)
+
+
+@router.post(
+    "/executions/{execution_id}/analysis",
+    response_model=ExecutionFailureAnalysisRead,
+    summary="Trigger or retrieve AI root cause failure analysis for a completed failed execution",
+)
+def request_failure_analysis(
+    project_id: UUID,
+    execution_id: UUID,
+    force: bool = False,
+    db: Session = Depends(get_db),
+) -> ExecutionFailureAnalysisRead:
+    analysis = FailureAnalysisService(db).get_or_create_analysis(
+        project_id, execution_id, force_refresh=force
+    )
+    return ExecutionFailureAnalysisRead.model_validate(analysis)
+
+
+@router.get(
+    "/executions/{execution_id}/analysis",
+    response_model=ExecutionFailureAnalysisRead,
+    summary="Get stored AI root cause failure analysis for an execution",
+)
+def get_failure_analysis(
+    project_id: UUID,
+    execution_id: UUID,
+    db: Session = Depends(get_db),
+) -> ExecutionFailureAnalysisRead:
+    analysis = FailureAnalysisService(db).get_analysis(project_id, execution_id)
+    return ExecutionFailureAnalysisRead.model_validate(analysis)
+
+
+@router.get(
+    "/failure-analyses",
+    response_model=ExecutionFailureAnalysisListResponse,
+    summary="List stored failure analyses for a project",
+)
+def list_failure_analyses(
+    project_id: UUID,
+    page: Pagination = Depends(pagination_params),
+    category: Annotated[FailureCategory | None, Query(alias="category")] = None,
+    db: Session = Depends(get_db),
+) -> ExecutionFailureAnalysisListResponse:
+    items, total = FailureAnalysisService(db).list_analyses(
+        project_id, page.limit, page.offset, category.value if category else None
+    )
+    return ExecutionFailureAnalysisListResponse(
+        items=[ExecutionFailureAnalysisRead.model_validate(item) for item in items],
+        total=total,
+        limit=page.limit,
+        offset=page.offset,
+    )

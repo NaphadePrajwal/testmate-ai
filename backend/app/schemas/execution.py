@@ -18,6 +18,7 @@ class TestCaseSnapshotRead(APIModel):
     version: int = 1
     test_type: str
     priority: str
+    target_url: str | None = None
     preconditions: list[str] = Field(default_factory=list)
     steps: list[dict[str, Any]] = Field(default_factory=list)
     expected_result: str

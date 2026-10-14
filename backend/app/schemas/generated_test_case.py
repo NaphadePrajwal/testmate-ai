@@ -27,6 +27,7 @@ class GeneratedStep(APIModel):
 class GeneratedTestCaseItem(APIModel):
     title: str = Field(min_length=1, max_length=255)
     description: str = Field(default="", max_length=5_000)
+    target_url: str | None = Field(default=None, max_length=2048)
     category: TestCaseCategory = Field(default=TestCaseCategory.POSITIVE)
     test_type: TestType = Field(default=TestType.WEB)
     priority: Priority = Field(default=Priority.MEDIUM)

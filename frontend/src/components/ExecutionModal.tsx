@@ -4,6 +4,7 @@ import type {
   ExecutionDetailResponse,
   ExecutionListResponse,
   ExecutionTriggerInput,
+  FailureAnalysis,
   TestCase,
   TestExecution,
 } from "../types/api";
@@ -23,6 +24,45 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
+function getCategoryLabel(category: string): string {
+  const map: Record<string, string> = {
+    assertion_failure: "Assertion / Validation Failure",
+    assertion_or_validation_failure: "Assertion / Validation Failure",
+    application_error: "Application / API Error",
+    timeout: "Execution Timeout",
+    network_error: "Network / Connection Error",
+    element_not_found: "Element Not Found",
+    security_violation: "Security Violation",
+    infrastructure_error: "Infrastructure / Runner Error",
+    unknown: "Unknown / Inconclusive Evidence",
+  };
+  return map[category] || category.replace(/_/g, " ");
+}
+
+function getConfidenceBadge(confidence: string) {
+  switch (confidence) {
+    case "high":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-800">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-600" /> High Confidence
+        </span>
+      );
+    case "medium":
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+          <span className="h-1.5 w-1.5 rounded-full bg-amber-600" /> Medium Confidence
+        </span>
+      );
+    case "low":
+    default:
+      return (
+        <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-800">
+          <span className="h-1.5 w-1.5 rounded-full bg-rose-600" /> Low Confidence
+        </span>
+      );
+  }
+}
+
 export function ExecutionModal({ projectId, testCase, isOpen, onClose }: ExecutionModalProps) {
   const [activeExecution, setActiveExecution] = useState<TestExecution | null>(null);
   const [executionDetail, setExecutionDetail] = useState<ExecutionDetailResponse | null>(null);
@@ -33,6 +73,12 @@ export function ExecutionModal({ projectId, testCase, isOpen, onClose }: Executi
   const [error, setError] = useState<string | null>(null);
   const [selectedExecutor, setSelectedExecutor] = useState<"auto" | "playwright" | "httpx" | "pytest">("auto");
   const [selectedScreenshotUrl, setSelectedScreenshotUrl] = useState<string | null>(null);
+
+  // Phase 7: AI Failure Analysis State
+  const [failureAnalysis, setFailureAnalysis] = useState<FailureAnalysis | null>(null);
+  const [isLoadingAnalysis, setIsLoadingAnalysis] = useState(false);
+  const [isRequestingAnalysis, setIsRequestingAnalysis] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const loadHistory = useCallback(async () => {
     setIsLoadingHistory(true);
@@ -66,6 +112,10 @@ export function ExecutionModal({ projectId, testCase, isOpen, onClose }: Executi
         setExecutions([]);
         setError(null);
         setSelectedScreenshotUrl(null);
+        setFailureAnalysis(null);
+        setIsLoadingAnalysis(false);
+        setIsRequestingAnalysis(false);
+        setAnalysisError(null);
       });
     }
   }, [isOpen]);
@@ -88,6 +138,43 @@ export function ExecutionModal({ projectId, testCase, isOpen, onClose }: Executi
     }
     void loadDetail();
   }, [activeExecution, projectId]);
+
+  // Load existing failure analysis if execution failed or errored
+  useEffect(() => {
+    async function checkExistingAnalysis() {
+      if (!activeExecution || (activeExecution.status !== "failed" && activeExecution.status !== "error")) {
+        setFailureAnalysis(null);
+        setAnalysisError(null);
+        return;
+      }
+      setIsLoadingAnalysis(true);
+      setAnalysisError(null);
+      try {
+        const analysis = await api.getExecutionFailureAnalysis(projectId, activeExecution.id);
+        setFailureAnalysis(analysis);
+      } catch {
+        // A 404 simply means no analysis has been run yet
+        setFailureAnalysis(null);
+      } finally {
+        setIsLoadingAnalysis(false);
+      }
+    }
+    void checkExistingAnalysis();
+  }, [activeExecution, projectId]);
+
+  async function handleRunAnalysis(force = false) {
+    if (!activeExecution) return;
+    setIsRequestingAnalysis(true);
+    setAnalysisError(null);
+    try {
+      const result = await api.requestExecutionFailureAnalysis(projectId, activeExecution.id, force);
+      setFailureAnalysis(result);
+    } catch (err) {
+      setAnalysisError(err instanceof Error ? err.message : "Failure analysis request failed.");
+    } finally {
+      setIsRequestingAnalysis(false);
+    }
+  }
 
   async function handleTriggerExecution() {
     setIsExecuting(true);
@@ -360,6 +447,236 @@ export function ExecutionModal({ projectId, testCase, isOpen, onClose }: Executi
                       </span>
                     </div>
                     <p className="mt-1 text-slate-700">{currentDefects[0].title}</p>
+                  </div>
+                )}
+
+                {/* Phase 7: AI Failure Analysis & Root Cause Detection */}
+                {(activeExecution.status === "failed" || activeExecution.status === "error") && (
+                  <div className="rounded-xl border border-indigo-200 bg-white p-5 shadow-sm space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-sm text-white shadow-sm">
+                          🤖
+                        </span>
+                        <div>
+                          <h4 className="text-xs font-bold text-slate-900">
+                            AI Root Cause & Failure Analysis
+                          </h4>
+                          <p className="text-[11px] text-slate-500">
+                            Automated failure classification and evidence-based diagnostic engine
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {failureAnalysis && (
+                          <button
+                            type="button"
+                            onClick={() => void handleRunAnalysis(true)}
+                            disabled={isRequestingAnalysis}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 disabled:opacity-50"
+                          >
+                            {isRequestingAnalysis ? (
+                              <>
+                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                                <span>Analyzing...</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>🔄</span>
+                                <span>Re-analyze</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                        {!failureAnalysis && !isLoadingAnalysis && (
+                          <button
+                            type="button"
+                            onClick={() => void handleRunAnalysis(false)}
+                            disabled={isRequestingAnalysis}
+                            className="inline-flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-indigo-700 disabled:opacity-50"
+                          >
+                            {isRequestingAnalysis ? (
+                              <>
+                                <span className="h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                                <span>Diagnosing Root Cause...</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>⚡</span>
+                                <span>Run AI Failure Analysis</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Loading existing analysis state */}
+                    {isLoadingAnalysis && (
+                      <div className="flex items-center justify-center py-6 text-xs text-slate-500">
+                        <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                        Checking for existing root cause analysis...
+                      </div>
+                    )}
+
+                    {/* Requesting analysis in progress */}
+                    {isRequestingAnalysis && !isLoadingAnalysis && (
+                      <div className="rounded-lg bg-indigo-50/60 p-4 text-center text-xs text-indigo-900 border border-indigo-100 space-y-1">
+                        <div className="flex items-center justify-center gap-2 font-semibold">
+                          <span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                          <span>Synthesizing logs, step failures, and evidence artifacts...</span>
+                        </div>
+                        <p className="text-[11px] text-indigo-700">
+                          Correlating execution trace with error patterns and generating root cause hypothesis.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Analysis Request Error */}
+                    {analysisError && (
+                      <div className="rounded-lg bg-rose-50 p-3 text-xs text-rose-800 border border-rose-200 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold">Analysis Failed</span>
+                          <button
+                            type="button"
+                            onClick={() => void handleRunAnalysis(false)}
+                            className="font-semibold underline hover:text-rose-900"
+                          >
+                            Retry
+                          </button>
+                        </div>
+                        <p className="text-[11px] font-mono whitespace-pre-wrap">{analysisError}</p>
+                      </div>
+                    )}
+
+                    {/* Empty state: No analysis yet */}
+                    {!failureAnalysis && !isLoadingAnalysis && !isRequestingAnalysis && !analysisError && (
+                      <div className="rounded-lg border border-dashed border-slate-200 bg-slate-50/50 p-4 text-center">
+                        <p className="text-xs font-medium text-slate-700">
+                          No root cause diagnosis has been run for this execution yet.
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Click <strong>Run AI Failure Analysis</strong> above to inspect logs and evidence, classify the failure category, and receive structured debugging recommendations.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Populated Failure Analysis Result */}
+                    {failureAnalysis && !isLoadingAnalysis && (
+                      <div className="space-y-4 text-xs">
+                        {/* Top Badges & Category Header */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 p-2.5 border border-slate-100">
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-slate-700">Category:</span>
+                            <span className="rounded bg-indigo-100 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-indigo-900">
+                              {getCategoryLabel(failureAnalysis.failure_category)}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[11px] text-slate-500">Confidence:</span>
+                            {getConfidenceBadge(failureAnalysis.confidence)}
+                          </div>
+                        </div>
+
+                        {/* Summary */}
+                        <div className="rounded-lg bg-indigo-50/40 border border-indigo-100/70 p-3">
+                          <span className="font-semibold text-indigo-950">Summary</span>
+                          <p className="mt-1 text-slate-700 leading-relaxed">{failureAnalysis.summary}</p>
+                        </div>
+
+                        {/* Observed Error vs Likely Root Cause */}
+                        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                          <div className="rounded-lg border border-rose-100 bg-rose-50/40 p-3">
+                            <div className="flex items-center gap-1.5 font-semibold text-rose-900">
+                              <span>💥</span>
+                              <span>Observed Error & Failed Step</span>
+                            </div>
+                            <p className="mt-1 font-mono text-[11px] text-rose-800 whitespace-pre-wrap">
+                              {failureAnalysis.observed_error}
+                            </p>
+                          </div>
+
+                          <div className="rounded-lg border border-purple-100 bg-purple-50/40 p-3">
+                            <div className="flex items-center gap-1.5 font-semibold text-purple-900">
+                              <span>🔍</span>
+                              <span>Likely Root Cause</span>
+                            </div>
+                            <p className="mt-1 text-slate-700 leading-relaxed">
+                              {failureAnalysis.likely_root_cause}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Supporting Evidence */}
+                        {failureAnalysis.supporting_evidence && failureAnalysis.supporting_evidence.length > 0 && (
+                          <div className="rounded-lg border border-slate-100 bg-slate-50/60 p-3">
+                            <span className="font-semibold text-slate-800">
+                              Supporting Evidence ({failureAnalysis.supporting_evidence.length})
+                            </span>
+                            <ul className="mt-2 list-inside list-disc space-y-1 text-slate-700">
+                              {failureAnalysis.supporting_evidence.map((evidence, idx) => (
+                                <li key={idx} className="leading-relaxed">
+                                  {evidence}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {/* Recommended Debugging Steps */}
+                        {failureAnalysis.recommended_debugging_steps && failureAnalysis.recommended_debugging_steps.length > 0 && (
+                          <div className="rounded-lg border border-slate-200 bg-white p-3 shadow-xs">
+                            <span className="font-semibold text-slate-900">
+                              Recommended Debugging & Remediation Steps
+                            </span>
+                            <ol className="mt-2 space-y-1.5 text-slate-700">
+                              {failureAnalysis.recommended_debugging_steps.map((step, idx) => (
+                                <li key={idx} className="flex items-start gap-2 leading-relaxed">
+                                  <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-[10px] font-bold text-indigo-700">
+                                    {idx + 1}
+                                  </span>
+                                  <span>{step}</span>
+                                </li>
+                              ))}
+                            </ol>
+                          </div>
+                        )}
+
+                        {/* Uncertainty Notes if present */}
+                        {failureAnalysis.uncertainty_notes && (
+                          <div className="rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-amber-900">
+                            <div className="flex items-center gap-1.5 font-semibold text-amber-800 text-[11px]">
+                              <span>⚠️</span>
+                              <span>Uncertainty & Missing Information</span>
+                            </div>
+                            <p className="mt-1 text-[11px] text-amber-800 leading-relaxed">
+                              {failureAnalysis.uncertainty_notes}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Footer with Metadata & AI Disclaimer */}
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-[10px] text-slate-400">
+                          <div className="flex items-center gap-2">
+                            <span>
+                              Provider: <strong className="text-slate-600">{failureAnalysis.metadata?.provider || "AI"}</strong>
+                            </span>
+                            {failureAnalysis.metadata?.model && (
+                              <span>
+                                Model: <strong className="text-slate-600">{failureAnalysis.metadata.model}</strong>
+                              </span>
+                            )}
+                            <span>
+                              Analyzed: {new Date(failureAnalysis.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                            </span>
+                          </div>
+                          <span className="italic text-slate-400">
+                            * AI-generated diagnostic hypothesis. Verify against runtime logs before making changes.
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

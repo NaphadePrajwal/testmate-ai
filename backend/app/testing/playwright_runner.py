@@ -14,11 +14,7 @@ from app.testing.contract import ExecutionOutcome, StepExecutionResult
 from app.testing.evidence_manager import EvidenceManager
 
 
-BLOCKED_HOSTS = {
-    "169.254.169.254",
-    "metadata.google.internal",
-    "instance-data",
-}
+from app.core.url_utils import BLOCKED_HOSTS, is_blocked_host, resolve_navigation_url, validate_and_normalize_url
 
 
 class PlaywrightWebRunner:
@@ -28,27 +24,9 @@ class PlaywrightWebRunner:
         self.settings = settings or get_settings()
         self.evidence_manager = evidence_manager or EvidenceManager(self.settings)
 
-    def _validate_target_url(self, url: str) -> str:
+    def _validate_target_url(self, url: str, base_url: str | None = None) -> str:
         """Resolve and validate target URL against allowed base URL and security blocklist."""
-        if url.startswith("data:"):
-            return url
-
-        if url.startswith("/"):
-            base = self.settings.target_app_url.rstrip("/")
-            full_url = f"{base}{url}"
-        elif not url.startswith("http://") and not url.startswith("https://"):
-            base = self.settings.target_app_url.rstrip("/")
-            full_url = f"{base}/{url}"
-        else:
-            full_url = url
-
-        parsed = urlparse(full_url)
-        hostname = (parsed.hostname or "").lower()
-
-        if hostname in BLOCKED_HOSTS:
-            raise ValueError(f"Security error: target host '{hostname}' is blocked to prevent SSRF.")
-
-        return full_url
+        return resolve_navigation_url(url, base_url=base_url)
 
     def _parse_step(self, step: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         """Determine action type and parameters from structured data or textual description."""
@@ -100,6 +78,10 @@ class PlaywrightWebRunner:
         first_error_message: str | None = None
         evidence_items = []
 
+        base_target_url = getattr(test_case, "target_url", None)
+        if not base_target_url and hasattr(test_case, "requirement") and test_case.requirement:
+            base_target_url = getattr(test_case.requirement, "target_url", None)
+
         steps = test_case.steps or []
         if not steps:
             steps = [{"action": f"Navigate to {test_case.title}", "expected_result": test_case.expected_result, "data": {"action": "navigate", "url": "/"}}]
@@ -112,6 +94,26 @@ class PlaywrightWebRunner:
                 args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
             )
             context = browser.new_context()
+
+            # Abort browser requests and redirects to prohibited internal destinations
+            def _ssrf_route_interceptor(route):
+                try:
+                    p = urlparse(route.request.url)
+                    h = (p.hostname or "").lower()
+                    blocked, _ = is_blocked_host(h)
+                    if blocked:
+                        route.abort("blockedbyclient")
+                        return
+                    route.continue_()
+                except Exception:
+                    route.continue_()
+
+            if hasattr(context, "route") and callable(getattr(context, "route")):
+                try:
+                    context.route("**/*", _ssrf_route_interceptor)
+                except Exception:
+                    pass
+
             page = context.new_page()
             page.set_default_timeout(timeout_ms)
 
@@ -126,8 +128,8 @@ class PlaywrightWebRunner:
                         actual_result = ""
 
                         if action_type in ("navigate", "goto"):
-                            raw_url = params.get("url") or "/"
-                            target_url = self._validate_target_url(raw_url)
+                            raw_url = params.get("url")
+                            target_url = self._validate_target_url(raw_url, base_url=base_target_url)
                             page.goto(target_url, timeout=timeout_ms)
                             actual_result = f"Navigated to {page.url}"
 

@@ -22,6 +22,7 @@ class TestCase(Base):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     preconditions: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     steps: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     expected_result: Mapped[str] = mapped_column(Text, nullable=False)

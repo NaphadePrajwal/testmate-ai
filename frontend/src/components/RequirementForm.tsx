@@ -11,6 +11,7 @@ interface RequirementFormProps {
 export function RequirementForm({ requirement, submitLabel, onSubmit, onCancel }: RequirementFormProps) {
   const [title, setTitle] = useState(requirement?.title ?? "");
   const [description, setDescription] = useState(requirement?.description ?? "");
+  const [targetUrl, setTargetUrl] = useState(requirement?.target_url ?? "");
   const [status, setStatus] = useState<RequirementStatus>(requirement?.status ?? "draft");
   const [criteria, setCriteria] = useState(requirement?.acceptance_criteria.join("\n") ?? "");
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +22,13 @@ export function RequirementForm({ requirement, submitLabel, onSubmit, onCancel }
     setSaving(true);
     setError(null);
     try {
-      await onSubmit({ title: title.trim(), description: description.trim(), status, acceptance_criteria: criteria.split("\n").map((item) => item.trim()).filter(Boolean) });
+      await onSubmit({
+        title: title.trim(),
+        description: description.trim(),
+        target_url: targetUrl.trim() || undefined,
+        status,
+        acceptance_criteria: criteria.split("\n").map((item) => item.trim()).filter(Boolean),
+      });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The requirement could not be saved.");
     } finally {
@@ -33,6 +40,9 @@ export function RequirementForm({ requirement, submitLabel, onSubmit, onCancel }
     <form className="space-y-4" onSubmit={(event) => void handleSubmit(event)}>
       <label className="block text-sm font-medium text-slate-700">Requirement title
         <input required maxLength={255} value={title} onChange={(event) => setTitle(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100" />
+      </label>
+      <label className="block text-sm font-medium text-slate-700">Target website / application URL <span className="font-normal text-slate-400">(optional, e.g. https://example.com)</span>
+        <input type="url" maxLength={2048} placeholder="https://example.com" value={targetUrl} onChange={(event) => setTargetUrl(event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100" />
       </label>
       <label className="block text-sm font-medium text-slate-700">Description
         <textarea required maxLength={50000} rows={5} value={description} onChange={(event) => setDescription(event.target.value)} className="mt-1.5 w-full resize-y rounded-xl border border-slate-300 px-3 py-2.5 text-slate-900 outline-none focus:border-violet-600 focus:ring-2 focus:ring-violet-100" />

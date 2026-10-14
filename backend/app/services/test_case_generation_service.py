@@ -58,7 +58,10 @@ class OpenAITestCaseProvider:
                 {
                     "role": "user",
                     "content": build_test_case_prompt(
-                        requirement.title, requirement.description, requirement.acceptance_criteria
+                        requirement.title,
+                        requirement.description,
+                        requirement.acceptance_criteria,
+                        target_url=requirement.target_url,
                     ),
                 },
             ],
@@ -107,7 +110,10 @@ class GeminiTestCaseProvider:
 
     def generate(self, requirement: Requirement) -> GeneratedTestCaseCollection:
         prompt_content = build_test_case_prompt(
-            requirement.title, requirement.description, requirement.acceptance_criteria
+            requirement.title,
+            requirement.description,
+            requirement.acceptance_criteria,
+            target_url=requirement.target_url,
         )
         request_body = {
             "system_instruction": {
@@ -203,10 +209,13 @@ class TestCaseGenerationService:
                 for step in item.steps
             ]
 
+            tc_target_url = item.target_url or requirement.target_url
+
             test_case = TestCase(
                 requirement_id=requirement.id,
                 title=title,
                 description=item.description,
+                target_url=tc_target_url,
                 preconditions=item.preconditions,
                 steps=steps_data,
                 expected_result=item.expected_result,
