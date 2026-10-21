@@ -241,6 +241,136 @@ pytest
 
 The test fixture rejects names not ending in `_test`, creates only its schema there, wraps each test in a transaction, and removes the schema after the suite completes.
 
+## Phase 8 Historical Bug Intelligence (Qdrant & SentenceTransformers)
+
+TestMate AI integrates vector retrieval for historical failure intelligence, resolved bugs, and regression test cases:
+
+- **Vector Database (Qdrant):** Managed via `QdrantService` (`backend/app/services/qdrant_service.py`), supporting `server` (standalone Qdrant on port 6333), `local` (embedded disk directory storage in `qdrant_storage`), and `memory` (transient in-memory storage for testing).
+- **Embedding Service (SentenceTransformers):** Managed via `EmbeddingService` (`backend/app/services/embedding_service.py`) using `sentence-transformers/all-MiniLM-L6-v2`:
+  - **Vector Dimensions:** Exactly 384 dimensions, normalized with Cosine similarity for direct Qdrant index compatibility.
+  - **Model Lifecycle & Caching:** In-memory thread-safe model caching reuses loaded weights across requests without reloading.
+  - **CPU-Friendly Execution:** Configured for `cpu` device by default with configurable batch sizes (`EMBEDDING_BATCH_SIZE=32`), requiring no GPU hardware.
+  - **Model Download Behavior:** Weights are loaded lazily on the first live embedding call; unit tests use deterministic mock doubles without requiring internet access or model downloads.
+
+### Usage Example:
+```python
+from app.services.embedding_service import EmbeddingService
+
+embedding_service = EmbeddingService()
+
+# Single-text embedding
+vector = embedding_service.embed_text("AssertionError: Expected 200 OK, got 500 Internal Server Error")
+assert len(vector) == 384
+
+# Batch embedding
+vectors = embedding_service.embed_batch([
+    "AssertionError: Expected 200 OK, got 500",
+    "TimeoutError: Page element not found within 15000ms",
+])
+```
+
+### Running Vector & Embedding Tests:
+```powershell
+Set-Location backend
+$env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/testmate_ai_test"
+pytest tests/test_qdrant_service.py tests/test_embedding_service.py tests/test_knowledge_document_service.py -v
+```
+
+### Historical Knowledge Preparation (Phase 8.4):
+- **Document Model (`PreparedKnowledgeDocument`):** Standardizes historical entities across 3 distinct knowledge record types:
+  1. `defect`: Captures defect title, description, severity, status, and associated failure traces. Explicitly marks resolution status without fabricating unverified root-cause documentation.
+  2. `failure_analysis`: Prepares AI diagnostic summaries, observed errors, and suggested debugging steps while strictly demarcating them as diagnostic hypotheses rather than confirmed resolutions.
+  3. `test_case`: Formats test descriptions, preconditions, structured step traces, and expected outcomes into clean searchable text.
+- **Tenant Isolation:** Enforces authoritative `project_id` on all prepared documents to guarantee cross-tenant isolation in subsequent vector indexing and semantic retrieval.
+- **Separation of Concerns:** Pure transformation layer (`KnowledgeDocumentService`) separating dense searchable text for embeddings from filterable metadata for Qdrant payload filters.
+
+### Knowledge Base Indexing Pipeline (Phase 8.5):
+- **Indexing Service (`KnowledgeBaseService`):** Orchestrates the end-to-end indexing pipeline connecting `KnowledgeDocumentService`, `EmbeddingService`, and `QdrantService` (`backend/app/services/knowledge_base_service.py`).
+- **Deterministic Point Identifiers:**
+  - Uses UUIDv5 derived from `uuid.uuid5(TESTMATE_KNOWLEDGE_NAMESPACE, f"{record_type}:{source_id}")`.
+  - Guarantees idempotent upserts: re-indexing an existing record updates the existing vector and metadata in place without creating duplicate points.
+  - Eliminates cross-type collisions by including the record type prefix.
+- **Payload & Metadata Serialization:**
+  - Preserves core filterable fields: `record_type`, `source_id`, `project_id`, `title`, `search_text`, `is_verified_resolution`, and `created_at`.
+  - Flattens bounded metadata (`severity`, `status`, `test_type`, `fingerprint`, etc.) into JSON-clean primitives compatible with Qdrant index filtering.
+  - Keeps PostgreSQL as the authoritative source of truth.
+- **Batch Processing & Error Resilience:**
+  - Configurable batch processing (`batch_size=32`) to optimize vector throughput while bounding memory usage.
+  - Granular error capture (`IndexingErrorItem`): embedding timeouts or Qdrant transport errors report partial failure diagnostics without halting the entire pipeline or claiming false successes.
+- **Project-Scoped Tenant Isolation:**
+  - Queries strictly filter on `project_id` to prevent cross-tenant record leakage.
+  - Exposes `POST /api/v1/projects/{project_id}/knowledge/index` allowing on-demand indexing with optional `record_types` filtering.
+- **Single-Entity Helpers:**
+  - Provides targeted methods (`index_single_defect`, `index_single_failure_analysis`, `index_single_test_case`, `delete_point`) for incremental sync as entities are created, updated, or removed.
+
+### Running Historical Knowledge Tests:
+```powershell
+Set-Location backend
+$env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/testmate_ai_test"
+pytest tests/test_qdrant_service.py tests/test_embedding_service.py tests/test_knowledge_document_service.py tests/test_knowledge_base_service.py tests/test_knowledge_retrieval_service.py -v
+```
+
+### Semantic Retrieval Services (Phase 8.6):
+- **Retrieval Service (`KnowledgeRetrievalService`):** Orchestrates semantic vector search across historical QA records in Qdrant (`backend/app/services/knowledge_retrieval_service.py`).
+- **Query Embedding Generation:** Converts search queries (failure descriptions, stack traces, questions) into normalized 384-d vectors using `EmbeddingService.embed_text`.
+- **Mandatory Tenant Isolation:** Strict Qdrant payload filtering (`models.Filter` with `FieldCondition(key="project_id", match=MatchValue(value=project_id))`) enforced at query time. Never allows cross-tenant vector leakage.
+- **Record-Type Filtering:** Supports targeting specific knowledge types (`defect`, `failure_analysis`, `test_case`) via `MatchAny` filtering.
+- **Similarity Thresholding & Ranking:**
+  - Configurable minimum cosine similarity threshold (`min_score`, default `0.4`, bound between `0.0` and `1.0`) applied directly via Qdrant's `score_threshold`.
+  - Configurable candidate limit (`limit`, default `5`, bound between `1` and `50`), returning results in descending score order.
+  - Automatic deduplication of source records (`record_type`, `source_id`).
+- **REST API Endpoint:**
+  - `POST /api/v1/projects/{project_id}/knowledge/search` — Accepts `query`, `record_types`, `limit`, and `min_score`. Returns structured `KnowledgeSearchResponse` with candidate metadata and similarity scores.
+- **Interpretability & Grounding:**
+  - Similarity scores quantify contextual and semantic text closeness, not diagnostic certainty that two failures share an identical root cause.
+
+### Bug Analysis Agent RAG Integration (Phase 8.7):
+- **Retrieval-Augmented Diagnosis (`FailureAnalysisService`):**
+  - Seamlessly integrates `KnowledgeRetrievalService` into the failure analysis pipeline (`backend/app/services/failure_analysis_service.py`).
+  - Automatically extracts a bounded search query from execution error reasons, failed step actions, and test metadata (`extract_failure_search_query`).
+  - Scopes retrieval strictly to the execution's authoritative `project_id`.
+  - Attaches relevant historical candidates directly to `ExecutionFailureContext.historical_candidates`.
+- **Prompt-Injection Hardening & Delimiter Boundaries:**
+  - Retrieved historical records are encapsulated in a strictly demarcated `<untrusted_historical_knowledge>` block.
+  - Prompt instructions explicitly command LLMs (OpenAI and Gemini) to treat historical data as passive evidence, never as executable instructions.
+  - Neutralizes nested XML tags (`</untrusted_historical_knowledge>`, `<historical_candidate>`, etc.) inside retrieved text to prevent prompt breakout attacks.
+- **Epistemic Distinctions (Verified vs. Hypothesized):**
+  - Defect tracker resolution status is explicitly labeled as tracker resolution without fabricating unverified technical post-mortems.
+  - Past AI diagnostic records are explicitly labeled as `PRIOR AI-GENERATED DIAGNOSTIC HYPOTHESIS` (non-verified).
+  - High cosine similarity scores are presented as contextual relevance signals, instructing the LLM never to claim shared root cause without corroborating failure traces.
+- **Resilient Fallback Behavior:**
+  - If Qdrant is offline, vector queries time out, or zero candidates match, the system logs diagnostic telemetry and falls back gracefully to standard Phase 7 failure diagnosis.
+  - Cached analyses bypass vector queries to avoid redundant retrieval overhead.
+- **Multi-Provider Support:**
+  - Both `OpenAIFailureAnalysisProvider` and `GeminiFailureAnalysisProvider` consume the same shared prompt builder (`build_failure_analysis_prompt`), ensuring identical RAG context and injection protections across models.
+
+### Automatic Knowledge Indexing & Resolution Lifecycle (Phase 8.8):
+- **Durable Outbox Indexing Queue (`knowledge_indexing_jobs`):**
+  - PostgreSQL-backed transactional outbox queue decoupling application database transactions from external vector database operations.
+  - Asynchronous / non-blocking dispatch: Qdrant downtime never blocks primary business workflows (defect creation, test case edits, failure analysis).
+  - Configurable exponential retry policy (`max_retries = 3`) with persistent error audit logs and safe state tracking (`pending`, `processing`, `completed`, `failed`).
+- **Defect Resolution & Verification Lifecycle:**
+  - Enforces strict epistemic distinction between unresolved defects, resolved-but-unverified defects, verified technical fixes, and AI-generated hypotheses.
+  - Transitioning a defect to `VERIFIED` requires documented `resolution_notes` and verification metadata (`verification_method`, `verification_evidence`).
+  - Merely marking a defect `RESOLVED` or `CLOSED` explicitly retains `is_verified_resolution = False` in vector embeddings and search payloads.
+  - Revoking verification (`REVOKED` or unverified status) automatically synchronizes to Qdrant, purging stale verified-resolution claims.
+- **Automatic Indexing Triggers:**
+  - **Failure Analyses:** Enqueued upon successful completion/persistence of new or re-analyzed execution failures; skips on cached retrieval hits.
+  - **Defects:** Automatically enqueued on creation (e.g. from execution failure) or update (`PATCH /api/v1/projects/{project_id}/defects/{defect_id}`).
+  - **Test Cases:** Enqueued upon creation, update, approval, or deletion (triggers vector deletion).
+- **Reconciliation & Batch Job Processing:**
+  - `PATCH /api/v1/projects/{project_id}/defects/{defect_id}` — Update defect status, resolution notes, and technical verification metadata.
+  - `GET /api/v1/projects/{project_id}/knowledge/jobs` — Inspect queue state and diagnose indexing issues.
+  - `POST /api/v1/projects/{project_id}/knowledge/jobs/process` — Manually trigger batch reconciliation/retry of pending or failed indexing operations.
+  - `POST /api/v1/projects/{project_id}/knowledge/index` — Full-project reindexing automatically resolves pending/failed queue jobs upon completion.
+
+### Running Historical Knowledge & RAG Tests:
+```powershell
+Set-Location backend
+$env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/testmate_ai_test"
+pytest tests/test_qdrant_service.py tests/test_embedding_service.py tests/test_knowledge_document_service.py tests/test_knowledge_base_service.py tests/test_knowledge_retrieval_service.py tests/test_failure_analysis_rag.py tests/test_knowledge_indexing_e2e.py -v
+```
+
 ## Current limitations
 
-Phase 6 implements complete test results, snapshots, evidence security/containment, and historical run management. It does not perform AI root-cause failure analysis (Phase 7), Qdrant vector retrieval/RAG (Phase 8), LangGraph multi-agent orchestration (Phase 9), intelligent test reporting (Phase 10), or self-healing test automation (Phase 12).
+Phases 1–7 and Phase 8 (RAG Historical Knowledge Base: Qdrant vector database, SentenceTransformers embedding pipeline, Historical Knowledge Preparation, Knowledge Base Indexing, Semantic Retrieval Services, Bug Analysis Agent RAG Integration, and Automatic Knowledge Indexing / Verification Lifecycle) are completed and verified across the backend test suite.

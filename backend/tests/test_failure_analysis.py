@@ -47,6 +47,19 @@ from app.services.failure_analysis_service import (
 from app.testing.contract import ErrorCategory, TestCaseSnapshot
 
 
+@pytest.fixture(autouse=True)
+def mock_retrieval_for_phase7_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure Phase 7 tests run fast without waiting for external Qdrant network timeouts."""
+    mock_retrieval = MagicMock()
+    mock_retrieval.search_project_knowledge.return_value = MagicMock(
+        query="mock", total_found=0, candidates=[]
+    )
+    monkeypatch.setattr(
+        "app.services.failure_analysis_service.KnowledgeRetrievalService",
+        lambda db=None: mock_retrieval,
+    )
+
+
 class DummyMockProvider:
     provider_name = "mock"
     model_name = "mock-model"

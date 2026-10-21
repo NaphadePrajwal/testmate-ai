@@ -4,8 +4,9 @@ from uuid import UUID
 
 from pydantic import Field, model_validator
 
-from app.models.enums import DefectStatus, EvidenceType, ExecutionStatus, Severity
+from app.models.enums import DefectStatus, EvidenceType, ExecutionStatus, Severity, VerificationStatus
 from app.schemas.common import APIModel, PageMeta
+from app.schemas.knowledge import HistoricalCandidateItem
 
 
 class ExecutionTriggerRequest(APIModel):
@@ -153,8 +154,24 @@ class DefectRead(APIModel):
     severity: Severity
     status: DefectStatus
     fingerprint: str | None
+    resolution_notes: str | None = None
+    verification_status: VerificationStatus = VerificationStatus.UNVERIFIED
+    verified_at: datetime | None = None
+    verification_method: str | None = None
+    verification_evidence: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class DefectUpdate(APIModel):
+    title: str | None = None
+    description: str | None = None
+    severity: Severity | None = None
+    status: DefectStatus | None = None
+    resolution_notes: str | None = None
+    verification_status: VerificationStatus | None = None
+    verification_method: str | None = None
+    verification_evidence: str | None = None
 
 
 class DefectListResponse(PageMeta):
@@ -203,5 +220,6 @@ class ExecutionFailureContext(APIModel):
     evidence_references: list[dict[str, Any]] = Field(default_factory=list)
     evidence: list[EvidenceRead] = Field(default_factory=list)
     defects: list[DefectRead] = Field(default_factory=list)
+    historical_candidates: list[HistoricalCandidateItem] = Field(default_factory=list)
     duration_ms: float = 0.0
     timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))

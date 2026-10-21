@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
-from uuid import UUID, uuid4
-
+import logging
 from pathlib import Path
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
@@ -9,13 +9,24 @@ from sqlalchemy.orm import Session, joinedload
 from app.core.config import Settings, get_settings
 from app.core.exceptions import ResourceConflictError, ResourceNotFoundError
 from app.models.defect import Defect
-from app.models.enums import DefectStatus, EvidenceType, ExecutionStatus, ReviewStatus, Severity, TestCaseStatus, TestType
+from app.models.enums import (
+    DefectStatus,
+    EvidenceType,
+    ExecutionStatus,
+    ReviewStatus,
+    Severity,
+    TestCaseStatus,
+    TestType,
+    VerificationStatus,
+)
 from app.models.execution_evidence import ExecutionEvidence
+from app.models.knowledge_indexing_job import IndexingJobAction
 from app.models.requirement import Requirement
 from app.models.test_case import TestCase
 from app.models.test_execution import TestExecution
 from app.schemas.execution import (
     DefectRead,
+    DefectUpdate,
     EvidenceRead,
     ExecutionDetailResponse,
     ExecutionFailureContext,
@@ -23,13 +34,17 @@ from app.schemas.execution import (
     StepExecutionResultRead,
     TestCaseSnapshotRead,
 )
+from app.schemas.knowledge import KnowledgeRecordType
 from app.services.database import commit_or_rollback
+from app.services.knowledge_indexing_job_service import KnowledgeIndexingJobService
 from app.services.project_service import ProjectService
 from app.testing.contract import ErrorCategory, TestCaseSnapshot
 from app.testing.evidence_manager import EvidenceManager
 from app.testing.httpx_runner import HttpxApiRunner
 from app.testing.playwright_runner import PlaywrightWebRunner
 from app.testing.pytest_runner import PytestRunner
+
+logger = logging.getLogger(__name__)
 
 
 class ExecutionService:
@@ -134,6 +149,62 @@ class ExecutionService:
         total = self.db.scalar(select(func.count()).select_from(statement.subquery())) or 0
         return list(self.db.scalars(statement.order_by(Defect.created_at.desc()).offset(offset).limit(limit))), total
 
+    def update_defect(self, project_id: UUID, defect_id: UUID, payload: DefectUpdate) -> Defect:
+        """
+        Update an existing defect record, enforce technical resolution verification criteria,
+        and trigger automatic knowledge index synchronization.
+        """
+        defect = self.get_defect(project_id, defect_id)
+        values = payload.model_dump(exclude_unset=True)
+
+        # Verification validation rules
+        if "verification_status" in values and values["verification_status"] is not None:
+            target_status = values["verification_status"]
+            if target_status == VerificationStatus.VERIFIED:
+                notes = values.get("resolution_notes") if "resolution_notes" in values else defect.resolution_notes
+                if not notes or not notes.strip():
+                    raise ResourceConflictError("Cannot mark defect resolution as verified without documented technical resolution notes.")
+                defect.verification_status = VerificationStatus.VERIFIED
+                defect.verified_at = datetime.now(timezone.utc)
+                if "verification_method" in values and values["verification_method"]:
+                    defect.verification_method = values["verification_method"]
+                elif not defect.verification_method:
+                    defect.verification_method = "manual_verification"
+                if "verification_evidence" in values:
+                    defect.verification_evidence = values["verification_evidence"]
+            elif target_status in (VerificationStatus.UNVERIFIED, VerificationStatus.REVOKED):
+                defect.verification_status = target_status
+                defect.verified_at = None
+
+        for field in ("title", "description", "severity", "status", "resolution_notes", "verification_method", "verification_evidence"):
+            if field in values and values[field] is not None:
+                setattr(defect, field, values[field])
+
+        commit_or_rollback(self.db)
+        self.db.refresh(defect)
+        self._trigger_auto_indexing(project_id, KnowledgeRecordType.DEFECT, defect.id)
+        return defect
+
+    def _trigger_auto_indexing(
+        self,
+        project_id: UUID,
+        record_type: KnowledgeRecordType | str,
+        source_id: UUID,
+        action: IndexingJobAction | str = IndexingJobAction.UPSERT,
+    ) -> None:
+        """Enqueue durable indexing job and attempt safe immediate processing."""
+        try:
+            job_svc = KnowledgeIndexingJobService(db=self.db)
+            job = job_svc.enqueue_job(
+                project_id=project_id,
+                record_type=record_type,
+                source_id=source_id,
+                action=action,
+            )
+            job_svc.process_job(job.id)
+        except Exception as exc:
+            logger.warning("Automatic indexing trigger failed for %s (%s): %s", record_type, source_id, exc)
+
     def execute_test_case(
         self,
         project_id: UUID,
@@ -224,6 +295,7 @@ class ExecutionService:
                 self.db.add(evidence_row)
 
             # Auto-record defect upon execution failure
+            created_defect: Defect | None = None
             if outcome.status == ExecutionStatus.FAILED and outcome.error_message:
                 defect = Defect(
                     id=uuid4(),
@@ -235,8 +307,11 @@ class ExecutionService:
                     fingerprint=f"{test_case.id}-{execution.id}",
                 )
                 self.db.add(defect)
+                created_defect = defect
 
             commit_or_rollback(self.db)
+            if created_defect is not None:
+                self._trigger_auto_indexing(project_id, KnowledgeRecordType.DEFECT, created_defect.id)
 
         except Exception as exc:
             execution.status = ExecutionStatus.ERROR

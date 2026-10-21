@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import logging
 from typing import Any, Protocol
 from uuid import UUID, uuid4
 
@@ -17,12 +18,50 @@ from app.core.config import Settings, get_settings
 from app.core.exceptions import ResourceConflictError, ResourceNotFoundError
 from app.models.enums import ExecutionStatus
 from app.models.execution_failure_analysis import ExecutionFailureAnalysis
+from app.models.knowledge_indexing_job import IndexingJobAction
 from app.schemas.execution import ExecutionFailureContext
 from app.schemas.failure_analysis import FailureAnalysisContent
+from app.schemas.knowledge import HistoricalCandidateItem, KnowledgeRecordType
 from app.services.database import commit_or_rollback
 from app.services.execution_service import ExecutionService
+from app.services.knowledge_indexing_job_service import KnowledgeIndexingJobService
+from app.services.knowledge_retrieval_service import KnowledgeRetrievalService
 from app.services.project_service import ProjectService
 from app.services.requirement_analysis_service import _clean_schema_for_gemini
+
+logger = logging.getLogger(__name__)
+
+
+def extract_failure_search_query(context: ExecutionFailureContext) -> str:
+    """
+    Extract a concise, bounded search query from an execution failure context
+    to find semantically relevant historical defects, failure analyses, and test cases.
+    """
+    parts: list[str] = []
+
+    # 1. Primary failure reason / error message
+    if context.sanitized_failure_reason and context.sanitized_failure_reason.strip():
+        parts.append(context.sanitized_failure_reason.strip())
+    elif context.error_message and context.error_message.strip():
+        parts.append(context.error_message.strip())
+
+    # 2. Specific failed step details
+    if context.failed_step:
+        fs = context.failed_step
+        fs_err = fs.error_message or fs.error_details
+        if fs_err and fs_err.strip() and fs_err.strip() not in parts:
+            parts.append(fs_err.strip())
+        if fs.action and fs.action.strip():
+            parts.append(f"Failed step: {fs.action.strip()}")
+
+    # 3. Fallback to test case title if no error text is available
+    if not parts and context.test_case_title:
+        parts.append(f"Test failure in {context.test_case_title.strip()}")
+
+    combined = " | ".join(parts).strip()
+    if len(combined) > 500:
+        combined = combined[:500]
+    return combined or f"Execution failure in {context.test_case_title}"
 
 
 class FailureAnalysisProvider(Protocol):
@@ -165,9 +204,17 @@ def get_failure_analysis_provider() -> FailureAnalysisProvider:
 class FailureAnalysisService:
     """Service orchestrating execution failure diagnosis, provider dispatch, idempotency, and persistence."""
 
-    def __init__(self, db: Session, provider: FailureAnalysisProvider | None = None) -> None:
+    def __init__(
+        self,
+        db: Session,
+        provider: FailureAnalysisProvider | None = None,
+        retrieval_service: KnowledgeRetrievalService | None = None,
+        job_service: KnowledgeIndexingJobService | None = None,
+    ) -> None:
         self.db = db
         self.provider = provider
+        self.retrieval_service = retrieval_service
+        self.job_service = job_service
 
     def get_or_create_analysis(
         self,
@@ -198,6 +245,33 @@ class FailureAnalysisService:
         # Retrieve structured Phase 6 analysis context
         context = ExecutionService(self.db).get_execution_for_analysis(project_id, execution_id)
 
+        # Retrieve relevant historical knowledge (RAG)
+        candidates: list[HistoricalCandidateItem] = []
+        retrieval_status = "not_attempted"
+        retrieval_error = None
+
+        try:
+            query = extract_failure_search_query(context)
+            retrieval_svc = self.retrieval_service or KnowledgeRetrievalService(db=self.db)
+            retrieval_res = retrieval_svc.search_project_knowledge(
+                project_id=project_id,
+                query=query,
+                limit=3,
+            )
+            candidates = retrieval_res.candidates or []
+            retrieval_status = "success" if candidates else "no_matches"
+        except Exception as exc:
+            logger.warning(
+                "Historical knowledge retrieval failed for execution %s (falling back to standard analysis): %s",
+                execution_id,
+                exc,
+            )
+            retrieval_status = "failed"
+            retrieval_error = str(exc)
+            candidates = []
+
+        context.historical_candidates = candidates
+
         # Resolve provider
         provider = self.provider or get_failure_analysis_provider()
         content = provider.analyze(context)
@@ -207,7 +281,11 @@ class FailureAnalysisService:
             "model": provider.model_name,
             "prompt_version": PROMPT_VERSION,
             "analyzed_at": datetime.now(timezone.utc).isoformat(),
+            "historical_retrieval_status": retrieval_status,
+            "historical_candidates_count": len(candidates),
         }
+        if retrieval_error:
+            metadata_dict["historical_retrieval_error"] = retrieval_error
 
         if existing is not None:
             existing.failure_category = content.failure_category.value
@@ -221,6 +299,7 @@ class FailureAnalysisService:
             existing.metadata_ = metadata_dict
             commit_or_rollback(self.db)
             self.db.refresh(existing)
+            self._trigger_auto_indexing(existing.project_id, KnowledgeRecordType.FAILURE_ANALYSIS, existing.id)
             return existing
 
         new_analysis = ExecutionFailureAnalysis(
@@ -240,7 +319,28 @@ class FailureAnalysisService:
         self.db.add(new_analysis)
         commit_or_rollback(self.db)
         self.db.refresh(new_analysis)
+        self._trigger_auto_indexing(new_analysis.project_id, KnowledgeRecordType.FAILURE_ANALYSIS, new_analysis.id)
         return new_analysis
+
+    def _trigger_auto_indexing(
+        self,
+        project_id: UUID,
+        record_type: KnowledgeRecordType | str,
+        source_id: UUID,
+        action: IndexingJobAction | str = IndexingJobAction.UPSERT,
+    ) -> None:
+        """Enqueue durable outbox indexing job and attempt non-blocking immediate processing."""
+        try:
+            job_svc = self.job_service or KnowledgeIndexingJobService(db=self.db)
+            job = job_svc.enqueue_job(
+                project_id=project_id,
+                record_type=record_type,
+                source_id=source_id,
+                action=action,
+            )
+            job_svc.process_job(job.id)
+        except Exception as exc:
+            logger.warning("Automatic indexing trigger failed for %s (%s): %s", record_type, source_id, exc)
 
     def get_analysis(self, project_id: UUID, execution_id: UUID) -> ExecutionFailureAnalysis:
         """Retrieve previously stored failure analysis for an execution."""

@@ -1,3 +1,4 @@
+import logging
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -5,13 +6,18 @@ from sqlalchemy.orm import Session
 
 from app.core.exceptions import ResourceConflictError, ResourceNotFoundError
 from app.models.enums import ReviewStatus, TestCaseStatus
+from app.models.knowledge_indexing_job import IndexingJobAction
 from app.models.requirement import Requirement
 from app.models.test_case import TestCase
 from app.models.test_execution import TestExecution
+from app.schemas.knowledge import KnowledgeRecordType
 from app.schemas.test_case import TestCaseCreate, TestCaseUpdate
 from app.services.database import commit_and_refresh, commit_or_rollback
+from app.services.knowledge_indexing_job_service import KnowledgeIndexingJobService
 from app.services.project_service import ProjectService
 from app.services.requirement_service import RequirementService
+
+logger = logging.getLogger(__name__)
 
 
 class TestCaseService:
@@ -99,6 +105,7 @@ class TestCaseService:
         test_case = TestCase(**values)
         self.db.add(test_case)
         commit_and_refresh(self.db, test_case)
+        self._trigger_auto_indexing(project_id, KnowledgeRecordType.TEST_CASE, test_case.id, IndexingJobAction.UPSERT)
         return test_case
 
     def update_test_case(self, project_id: UUID, test_case_id: UUID, payload: TestCaseUpdate) -> TestCase:
@@ -114,6 +121,7 @@ class TestCaseService:
         if values:
             test_case.version += 1
         commit_and_refresh(self.db, test_case)
+        self._trigger_auto_indexing(project_id, KnowledgeRecordType.TEST_CASE, test_case.id, IndexingJobAction.UPSERT)
         return test_case
 
     def update_requirement_test_case(
@@ -131,6 +139,7 @@ class TestCaseService:
         if values:
             test_case.version += 1
         commit_and_refresh(self.db, test_case)
+        self._trigger_auto_indexing(project_id, KnowledgeRecordType.TEST_CASE, test_case.id, IndexingJobAction.UPSERT)
         return test_case
 
     def approve_requirement_test_case(
@@ -149,6 +158,7 @@ class TestCaseService:
         test_case.status = TestCaseStatus.APPROVED
         test_case.version += 1
         commit_and_refresh(self.db, test_case)
+        self._trigger_auto_indexing(project_id, KnowledgeRecordType.TEST_CASE, test_case.id, IndexingJobAction.UPSERT)
         return test_case
 
     def reject_requirement_test_case(
@@ -167,6 +177,7 @@ class TestCaseService:
         test_case.status = TestCaseStatus.RETIRED
         test_case.version += 1
         commit_and_refresh(self.db, test_case)
+        self._trigger_auto_indexing(project_id, KnowledgeRecordType.TEST_CASE, test_case.id, IndexingJobAction.DELETE)
         return test_case
 
     def delete_test_case(self, project_id: UUID, test_case_id: UUID) -> None:
@@ -176,3 +187,24 @@ class TestCaseService:
             raise ResourceConflictError("Executed test cases cannot be deleted to preserve execution history.")
         self.db.delete(test_case)
         commit_or_rollback(self.db)
+        self._trigger_auto_indexing(project_id, KnowledgeRecordType.TEST_CASE, test_case_id, IndexingJobAction.DELETE)
+
+    def _trigger_auto_indexing(
+        self,
+        project_id: UUID,
+        record_type: KnowledgeRecordType | str,
+        source_id: UUID,
+        action: IndexingJobAction | str = IndexingJobAction.UPSERT,
+    ) -> None:
+        """Enqueue durable outbox indexing job and attempt non-blocking immediate processing."""
+        try:
+            job_svc = KnowledgeIndexingJobService(db=self.db)
+            job = job_svc.enqueue_job(
+                project_id=project_id,
+                record_type=record_type,
+                source_id=source_id,
+                action=action,
+            )
+            job_svc.process_job(job.id)
+        except Exception as exc:
+            logger.warning("Automatic indexing trigger failed for %s (%s): %s", record_type, source_id, exc)

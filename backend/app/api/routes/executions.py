@@ -14,6 +14,7 @@ from app.models.enums import DefectStatus, ExecutionStatus, Severity
 from app.schemas.execution import (
     DefectListResponse,
     DefectRead,
+    DefectUpdate,
     EvidenceListResponse,
     EvidenceRead,
     ExecutionDetailResponse,
@@ -167,6 +168,20 @@ def list_defects(
 @router.get("/defects/{defect_id}", response_model=DefectRead, summary="Get a defect")
 def get_defect(project_id: UUID, defect_id: UUID, db: Session = Depends(get_db)) -> DefectRead:
     return ExecutionService(db).get_defect(project_id, defect_id)
+
+
+@router.patch(
+    "/defects/{defect_id}",
+    response_model=DefectRead,
+    summary="Update a defect, its technical resolution, or verification status",
+)
+def update_defect(
+    project_id: UUID,
+    defect_id: UUID,
+    payload: DefectUpdate,
+    db: Session = Depends(get_db),
+) -> DefectRead:
+    return ExecutionService(db).update_defect(project_id, defect_id, payload)
 
 
 @router.post(

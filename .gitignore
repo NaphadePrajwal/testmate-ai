@@ -28,3 +28,7 @@ Thumbs.db
 # Local evidence storage (Phase 5)
 evidence_storage/
 backend/evidence_storage/
+
+# Local Qdrant vector storage (Phase 8)
+qdrant_storage/
+backend/qdrant_storage/

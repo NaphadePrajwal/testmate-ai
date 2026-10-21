@@ -63,6 +63,12 @@ class Severity(StrEnum):
     CRITICAL = "critical"
 
 
+class VerificationStatus(StrEnum):
+    UNVERIFIED = "unverified"
+    VERIFIED = "verified"
+    REVOKED = "revoked"
+
+
 def enum_values(enum_class: type[StrEnum]) -> list[str]:
     """Store enum values (not Python member names) in PostgreSQL."""
 

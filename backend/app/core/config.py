@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,7 +29,35 @@ class Settings(BaseSettings):
     http_timeout_seconds: float = 10.0
     evidence_storage_dir: str = "evidence_storage"
 
+    # Historical Bug Intelligence / Qdrant (Phase 8)
+    qdrant_mode: str = "server"  # "server", "local", or "memory"
+    qdrant_url: str = "http://localhost:6333"
+    qdrant_api_key: str | None = None
+    qdrant_collection: str = "testmate_historical_knowledge"
+    qdrant_local_path: str = "qdrant_storage"
+    qdrant_timeout_seconds: float = 5.0
+    qdrant_vector_size: int = 384
+
+    # Embedding Model Configuration (Phase 8.3)
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_dimension: int = 384
+    embedding_device: str = "cpu"
+    embedding_batch_size: int = 32
+
+    # Historical Bug Intelligence / Semantic Retrieval (Phase 8.6)
+    knowledge_retrieval_min_score: float = 0.4
+    knowledge_retrieval_limit: int = 5
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    @model_validator(mode="after")
+    def validate_embedding_and_qdrant_dimensions(self) -> "Settings":
+        if self.embedding_dimension != self.qdrant_vector_size:
+            raise ValueError(
+                f"Configuration mismatch: embedding_dimension ({self.embedding_dimension}) "
+                f"must equal qdrant_vector_size ({self.qdrant_vector_size})."
+            )
+        return self
 
     @property
     def allowed_origins(self) -> list[str]:
