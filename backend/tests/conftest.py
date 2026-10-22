@@ -12,13 +12,40 @@ import app.models  # noqa: F401  Register complete metadata before test schema c
 from app.main import app
 
 
+# Automatically load backend/.env.test if present
+_env_test_path = os.path.join(os.path.dirname(__file__), "..", ".env.test")
+if os.path.exists(_env_test_path):
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_test_path, override=False)
+    except ImportError:
+        pass
+
+
 def _test_database_url() -> URL:
     raw_url = os.getenv("TEST_DATABASE_URL")
     if not raw_url:
         pytest.skip("Set TEST_DATABASE_URL to run PostgreSQL integration tests.")
     url = make_url(raw_url)
-    if not url.database or not url.database.endswith("_test"):
-        raise RuntimeError("TEST_DATABASE_URL must point to a dedicated database whose name ends in '_test'.")
+    db_name = (url.database or "").lower()
+
+    # Reject known development, production, and system database targets
+    prohibited_targets = {"testmate_ai", "testmate_dev", "testmate_prod", "postgres", "production"}
+    if db_name in prohibited_targets or not (db_name.endswith("_test") or db_name == "testmate_test"):
+        raise RuntimeError(
+            f"TEST_DATABASE_URL target '{db_name}' is not permitted. "
+            "Must be an isolated test database ending in '_test' (e.g. 'testmate_test')."
+        )
+
+    # Validate host safety (prevent accidental targeting of remote/production instances)
+    host = (url.host or "").lower()
+    allowed_hosts = {"localhost", "127.0.0.1", "::1"}
+    if host and host not in allowed_hosts and os.getenv("ALLOW_REMOTE_TEST_DB", "").lower() != "true":
+        raise RuntimeError(
+            f"TEST_DATABASE_URL host '{host}' is not a local loopback address. "
+            "Set ALLOW_REMOTE_TEST_DB=true if intentional."
+        )
+
     return url
 
 

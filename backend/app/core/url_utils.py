@@ -50,6 +50,9 @@ def validate_and_normalize_url(url: str, allow_data_urls: bool = False) -> str:
     if scheme not in ("http", "https"):
         raise ValueError(f"Invalid URL scheme '{scheme}'. Only HTTP and HTTPS are permitted.")
 
+    if parsed.username or parsed.password or "@" in (parsed.netloc or ""):
+        raise ValueError("Security violation: embedded user credentials in target URL are prohibited.")
+
     hostname = (parsed.hostname or "").lower().strip()
     if not hostname:
         raise ValueError(f"Invalid URL '{clean_url}': missing hostname.")

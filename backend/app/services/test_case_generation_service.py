@@ -170,7 +170,9 @@ class TestCaseGenerationService:
         self.db = db
         self.provider = provider
 
-    def generate_for_requirement(self, project_id: UUID, requirement_id: UUID) -> GeneratedTestCasesResponse:
+    def generate_for_requirement(
+        self, project_id: UUID, requirement_id: UUID, instructions: str | None = None
+    ) -> GeneratedTestCasesResponse:
         requirement = self.db.scalar(
             select(Requirement).where(Requirement.id == requirement_id, Requirement.project_id == project_id)
         )
@@ -180,7 +182,17 @@ class TestCaseGenerationService:
         if not requirement.title.strip() or not requirement.description.strip():
             raise AnalysisInputError("This requirement needs a non-empty title and description before test cases can be generated.")
 
-        generated_collection = self.provider.generate(requirement)
+        req_for_generation: Any = requirement
+        if instructions and instructions.strip():
+            from types import SimpleNamespace
+            req_for_generation = SimpleNamespace(
+                title=requirement.title,
+                description=f"{requirement.description}\n\n[REVISION FEEDBACK FROM REVIEWER]:\n{instructions.strip()}",
+                acceptance_criteria=requirement.acceptance_criteria,
+                target_url=requirement.target_url,
+            )
+
+        generated_collection = self.provider.generate(req_for_generation)
 
         # Retrieve existing titles to prevent unique constraint conflicts
         existing_titles = set(

@@ -371,6 +371,192 @@ $env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/te
 pytest tests/test_qdrant_service.py tests/test_embedding_service.py tests/test_knowledge_document_service.py tests/test_knowledge_base_service.py tests/test_knowledge_retrieval_service.py tests/test_failure_analysis_rag.py tests/test_knowledge_indexing_e2e.py -v
 ```
 
+## Phase 9 — Multi-Agent Workflow Using LangGraph
+
+Phase 9 connects TestMate AI's autonomous capabilities into a genuine, stateful, multi-agent workflow orchestrated via **LangGraph**.
+
+### Workflow Architecture & State Machine
+
+```text
+[START]
+   │
+   ▼
+1. Validate Context Node (Validate project & requirement association)
+   │
+   ▼
+2. Requirement Analysis Agent Node (Invoke AI requirement analysis service)
+   │
+   ▼
+3. Test Case Generation Agent Node (Synthesize structured test cases from validated analysis)
+   │
+   ▼
+4. Human Approval Checkpoint (Interrupt execution & persist state via PostgresSaver)
+   │
+   ├── REJECT ──────────────► Record Rejection ──► [END] (Zero executions)
+   │
+   ├── REQUEST REVISION ────► Apply Revision Feedback ──► (Loop back to Test Case Generation)
+   │
+   └── APPROVE ─────────────► Validate Approval
+                                   │
+                                   ▼
+                              5. Test Execution Node (Run approved cases via Execution Service)
+                                   │
+                                   ▼
+                             [Evaluate Execution Outcomes]
+                                   │
+                    ┌──────────────┴──────────────┐
+                    ▼                             ▼
+             [All Passed]                 [Failures Found]
+                    │                             │
+                    ▼                             ▼
+           Record Success Node         6. Historical RAG Node (Query project-scoped Qdrant knowledge)
+                    │                             │
+                    ▼                             ▼
+                  [END]                7. Failure Analysis Agent Node (AI root cause diagnosis)
+                                                  │
+                                                  ▼
+                                                [END]
+```
+
+### Key Capabilities
+
+1. **Stateful Graph Orchestration (`app.orchestration.graph`):**
+   - Built and compiled using `langgraph.graph.StateGraph` with typed shared state (`WorkflowGraphState`).
+   - Every major lifecycle phase is a first-class graph node communicating purely through validated state.
+   - Nodes only update their owned keys; invalid state transitions are bounded and rejected.
+
+2. **Human Approval Checkpoint Interruption:**
+   - Implemented using LangGraph's native `interrupt(...)` mechanism.
+   - When test cases are synthesized, execution suspends deterministically and returns `paused_for_approval` status.
+   - Execution strictly **cannot** proceed to test execution without human review.
+   - Reviewers can:
+     - **Approve:** Resumes execution via `Command(resume=...)`, executing test cases.
+     - **Reject:** Cleanly terminates the workflow with zero executions and marks status `rejected`.
+     - **Request Revision:** Captures reviewer feedback instructions, routes back to generation, and pauses for review again.
+
+3. **Conditional Routing Based on Real Execution Results:**
+   - Evaluates real test execution results (`passed_count`, `failed_count`, `error_count`).
+   - **All Passed:** Routes to `record_success`, completely bypassing RAG and failure analysis.
+   - **Failures Found:** Routes to `historical_rag` to retrieve matching defect/failure precedents from Qdrant, passing retrieved context into `failure_analysis`.
+
+4. **Persistent PostgreSQL Checkpointing (`PostgresSaver`):**
+   - Backed by PostgreSQL (`langgraph-checkpoint-postgres`), ensuring workflow state and checkpoints survive process restarts.
+   - Domain workflow metadata (`WorkflowExecution`) and chronological stage events (`WorkflowEvent`) are persisted in PostgreSQL.
+   - Internal checkpoint tables (`checkpoints`, `checkpoint_blobs`, `checkpoint_writes`, `checkpoint_migrations`) are safely isolated and excluded from Alembic schema drift tracking.
+
+5. **FastAPI Endpoints:**
+   - `POST /api/v1/projects/{project_id}/workflows` — Initialize and start workflow for a requirement (pauses at approval checkpoint).
+   - `GET /api/v1/projects/{project_id}/workflows` — List workflows for a project or requirement.
+   - `GET /api/v1/projects/{project_id}/workflows/{workflow_id}` — Retrieve workflow state, current stage, generated cases, and executions.
+   - `GET /api/v1/projects/{project_id}/workflows/{workflow_id}/history` — Retrieve chronological audit log of stage transitions.
+   - `POST /api/v1/projects/{project_id}/workflows/{workflow_id}/approval` — Submit human approval decision (`approve`, `reject`, `request_revision`).
+
+6. **Frontend Integration:**
+   - Responsive `MultiAgentWorkflowPanel` embedded directly into requirement cards on the Project details page.
+   - Displays live 5-stage stepper visualization with real-time status badges.
+   - Interactive Human Approval Checkpoint allowing one-click approval, revision requests, or rejections.
+   - Expandable stage transition audit log.
+
+### Running Phase 9 Tests:
+
+```powershell
+Set-Location backend
+$env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/testmate_ai_test"
+pytest tests/test_multi_agent_workflow.py -v
+```
+
+### Running All Regression Tests:
+
+```powershell
+Set-Location backend
+$env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/testmate_ai_test"
+pytest -q
+```
+
+## Phase 10 — Autonomous Browser Testing & Intelligent Test Orchestration
+
+Phase 10 enables TestMate AI to execute approved test cases against real web applications, capture structured execution evidence (screenshots, console logs, network errors), and integrate execution results with the LangGraph workflow and AI failure analysis.
+
+### Architecture & Capabilities
+
+1. **Playwright Browser Runner (`app.testing.playwright_runner`):**
+   - Headless Chromium browser automation via the official `playwright` Python package.
+   - Dynamic locator resolution with accessibility-first priority:
+     - `role` & `name` (`page.get_by_role(role, name=name)`)
+     - `label` (`page.get_by_label(...)`)
+     - `placeholder` (`page.get_by_placeholder(...)`)
+     - `test_id` (`page.get_by_test_id(...)`)
+     - `text` (`page.get_by_text(...)`)
+     - Standard CSS/XPath selector fallback
+   - Supported structured actions:
+     - `navigate`: Navigate to target URL with pre-navigation and redirect validation.
+     - `click`: Click accessible buttons, links, or inputs.
+     - `fill`: Populate form fields and inputs.
+     - `select`: Choose option by value or label in `<select>` elements.
+     - `check` / `uncheck`: Toggle accessible checkboxes and radios.
+     - `assert_visible`: Verify visible presence of an element on screen.
+     - `assert_text`: Verify exact or substring text visible on screen.
+     - `assert_title`: Assert browser tab title.
+     - `assert_url`: Assert current URL or path.
+     - `wait_for`: Bounded wait for element or timeout.
+
+2. **Target Application Safety & SSRF Protection (`app.core.url_utils`):**
+   - Strict scheme enforcement (permitting only `http` and `https`).
+   - Embedded credentials rejection (`user:pass@host` immediately rejected).
+   - Loopback and local testing safety: allowed on designated localhost/127.0.0.1 ports for test fixtures.
+   - Cloud metadata blocking: `169.254.169.254` and link-local ranges explicitly rejected.
+   - Pre-navigation destination revalidation and redirect inspection.
+
+3. **Structured Evidence & Defect Auto-Creation (`ExecutionEvidence`):**
+   - High-resolution viewport screenshot capture on test failure and on completion.
+   - Browser console logs, unhandled page errors, and failed network requests captured into `ExecutionEvidence`.
+   - Distinguishes test assertion failures (`ExecutionStatus.FAILED`, `ErrorCategory.ASSERTION_FAILURE`) from infrastructure errors (`ExecutionStatus.ERROR`, `ErrorCategory.INFRASTRUCTURE_ERROR`).
+   - Generates and links a PostgreSQL `Defect` on assertion failure.
+
+4. **Safe Local Demonstration Storefront (`/api/v1/demo/storefront`):**
+   - Self-contained, isolated e-commerce demo application served directly by FastAPI.
+   - Features product browsing, cart addition, live cart badge count, and checkout payment form.
+   - Supports deliberate failure testing: entering card number `0000` or `fail` triggers simulated payment decline.
+
+5. **Frontend Results & Evidence Inspector:**
+   - Expandable execution cards inside `MultiAgentWorkflowPanel.tsx`.
+   - Chronological step-by-step breakdown with action badges, status badges, expected vs. actual outcomes, and step duration in ms.
+   - Screenshot gallery with click-to-zoom modal for detailed visual inspection.
+   - Download links for captured diagnostic logs and screenshots.
+   - Direct links to auto-created defects.
+
+### Isolated PostgreSQL Integration Test Infrastructure
+
+To ensure zero risk to development and production databases:
+- The integration test harness (`backend/tests/conftest.py`) requires an isolated test database configured via `TEST_DATABASE_URL` (e.g. `testmate_test`).
+- Rejects any target database named `testmate_ai`, `postgres`, `production`, or pointing to non-loopback hosts.
+- Automatically loads `backend/.env.test` (ignored by Git).
+- Creates schema fixtures, executes tests within isolated transactions, and cleans up safely without leaving residue.
+
+### Running Phase 10 Tests
+
+```powershell
+# 1. Ensure Playwright browser binaries are installed
+playwright install chromium
+
+# 2. Run Autonomous Browser Testing test suite
+Set-Location backend
+$env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/testmate_test"
+pytest tests/test_autonomous_browser_testing.py -v
+
+# 3. Run full backend suite (167 tests)
+pytest -q
+
+# 4. Check Alembic schema drift
+alembic check
+
+# 5. Frontend lint and production build
+Set-Location ../frontend
+npm run lint
+npm run build
+```
+
 ## Current limitations
 
-Phases 1–7 and Phase 8 (RAG Historical Knowledge Base: Qdrant vector database, SentenceTransformers embedding pipeline, Historical Knowledge Preparation, Knowledge Base Indexing, Semantic Retrieval Services, Bug Analysis Agent RAG Integration, and Automatic Knowledge Indexing / Verification Lifecycle) are completed and verified across the backend test suite.
+Phases 1–10 are fully implemented and verified across the backend automated test suite (167 passed tests), live Playwright browser runs, Alembic migrations, and the React frontend dashboard. External third-party websites outside approved domains are blocked by default for safety. Production deployments should run Playwright inside isolated containers or sandboxes.
+

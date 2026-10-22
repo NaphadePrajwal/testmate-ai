@@ -19,7 +19,13 @@ import type {
   TestCaseUpdateInput,
   TestExecution,
   FailureAnalysis,
-  FailureAnalysisListResponse
+  FailureAnalysisListResponse,
+  WorkflowApprovalInput,
+  WorkflowDetailResponse,
+  WorkflowExecution,
+  WorkflowHistoryResponse,
+  WorkflowListResponse,
+  WorkflowStartInput
 } from "../types/api";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -112,5 +118,23 @@ export const api = {
   getFailureAnalyses: (projectId: string, category?: string, limit = 50, offset = 0): Promise<FailureAnalysisListResponse> =>
     request<FailureAnalysisListResponse>(
       collectionPath(`/projects/${projectId}/failure-analyses`, limit, offset, category ? { category } : {})
-    )
+    ),
+  startWorkflow: (projectId: string, payload: WorkflowStartInput): Promise<WorkflowExecution> =>
+    request<WorkflowExecution>(`/projects/${projectId}/workflows`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  getWorkflows: (projectId: string, limit = 50, offset = 0, requirementId?: string): Promise<WorkflowListResponse> =>
+    request<WorkflowListResponse>(
+      collectionPath(`/projects/${projectId}/workflows`, limit, offset, requirementId ? { requirement_id: requirementId } : {})
+    ),
+  getWorkflow: (projectId: string, workflowId: string): Promise<WorkflowDetailResponse> =>
+    request<WorkflowDetailResponse>(`/projects/${projectId}/workflows/${workflowId}`),
+  getWorkflowHistory: (projectId: string, workflowId: string): Promise<WorkflowHistoryResponse> =>
+    request<WorkflowHistoryResponse>(`/projects/${projectId}/workflows/${workflowId}/history`),
+  submitWorkflowApproval: (projectId: string, workflowId: string, payload: WorkflowApprovalInput): Promise<WorkflowDetailResponse> =>
+    request<WorkflowDetailResponse>(`/projects/${projectId}/workflows/${workflowId}/approval`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
 };

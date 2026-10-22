@@ -131,6 +131,15 @@ class QdrantService:
                     distance=models.Distance.COSINE,
                 ),
             )
+            try:
+                client.create_payload_index(
+                    collection_name=self.collection_name,
+                    field_name="project_id",
+                    field_schema=models.PayloadSchemaType.KEYWORD,
+                )
+            except Exception as index_exc:
+                logger.debug("Payload index creation note: %s", index_exc)
+
             logger.info("Successfully created Qdrant collection '%s'.", self.collection_name)
             return True
         except Exception as exc:

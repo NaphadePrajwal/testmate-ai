@@ -310,3 +310,66 @@ export interface FailureAnalysis {
 }
 
 export type FailureAnalysisListResponse = PageResponse<FailureAnalysis>;
+
+export type WorkflowStatus =
+  | "pending"
+  | "analyzing_requirement"
+  | "generating_test_cases"
+  | "paused_for_approval"
+  | "executing_tests"
+  | "analyzing_failure"
+  | "completed"
+  | "failed"
+  | "rejected";
+
+export type WorkflowApprovalAction = "approve" | "reject" | "request_revision";
+
+export interface WorkflowExecution {
+  id: string;
+  project_id: string;
+  requirement_id: string;
+  status: WorkflowStatus;
+  current_stage: string;
+  generated_test_case_ids: string[];
+  execution_ids: string[];
+  failure_analysis_id?: string | null;
+  error_message?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  completed_at?: string | null;
+}
+
+export interface WorkflowDetailResponse extends WorkflowExecution {
+  generated_test_cases: TestCase[];
+  executions: TestExecution[];
+  failure_analysis?: FailureAnalysis | null;
+}
+
+export interface WorkflowEvent {
+  id: string;
+  workflow_id: string;
+  stage: string;
+  event_type: string;
+  message?: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface WorkflowHistoryResponse {
+  workflow_id: string;
+  events: WorkflowEvent[];
+}
+
+export type WorkflowListResponse = PageResponse<WorkflowExecution>;
+
+export interface WorkflowStartInput {
+  requirement_id: string;
+  notes?: string | null;
+}
+
+export interface WorkflowApprovalInput {
+  action: WorkflowApprovalAction;
+  notes?: string | null;
+  revision_instructions?: string | null;
+}

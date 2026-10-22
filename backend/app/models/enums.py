@@ -69,7 +69,37 @@ class VerificationStatus(StrEnum):
     REVOKED = "revoked"
 
 
+class WorkflowStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    PAUSED_FOR_APPROVAL = "paused_for_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    REVISION_REQUESTED = "revision_requested"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class WorkflowStage(StrEnum):
+    INITIALIZATION = "initialization"
+    REQUIREMENT_ANALYSIS = "requirement_analysis"
+    TEST_CASE_GENERATION = "test_case_generation"
+    HUMAN_APPROVAL = "human_approval"
+    TEST_EXECUTION = "test_execution"
+    HISTORICAL_RAG = "historical_rag"
+    FAILURE_ANALYSIS = "failure_analysis"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class WorkflowApprovalAction(StrEnum):
+    APPROVE = "approve"
+    REJECT = "reject"
+    REQUEST_REVISION = "request_revision"
+
+
 def enum_values(enum_class: type[StrEnum]) -> list[str]:
     """Store enum values (not Python member names) in PostgreSQL."""
 
     return [member.value for member in enum_class]
+

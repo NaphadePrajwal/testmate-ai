@@ -231,23 +231,26 @@ class ExecutionService:
         evidence_manager = EvidenceManager(settings)
 
         # Determine runner
-        executor_name = (executor_override or "").lower().strip()
-        if not executor_name:
-            if test_case.test_type == TestType.WEB:
-                executor_name = "playwright"
-            elif test_case.test_type == TestType.API:
-                executor_name = "httpx"
-            else:
-                executor_name = "pytest"
+        raw_executor = (executor_override or "").lower().strip()
+        if raw_executor in ("playwright", "httpx", "pytest"):
+            runner_name = raw_executor
+        elif test_case.test_type == TestType.WEB:
+            runner_name = "playwright"
+        elif test_case.test_type == TestType.API:
+            runner_name = "httpx"
+        else:
+            runner_name = "pytest"
 
-        if executor_name == "playwright":
+        if runner_name == "playwright":
             runner = PlaywrightWebRunner(settings, evidence_manager)
-        elif executor_name == "httpx":
+        elif runner_name == "httpx":
             runner = HttpxApiRunner(settings, evidence_manager)
-        elif executor_name == "pytest":
+        elif runner_name == "pytest":
             runner = PytestRunner(settings, evidence_manager)
         else:
-            raise ResourceConflictError(f"Unsupported executor: '{executor_name}'. Must be playwright, httpx, or pytest.")
+            raise ResourceConflictError(f"Unsupported executor: '{raw_executor}'. Must be playwright, httpx, or pytest.")
+
+        executor_display = executor_override or runner_name
 
         # Create immutable execution record in QUEUED state
         now = datetime.now(timezone.utc)
@@ -255,7 +258,7 @@ class ExecutionService:
             id=uuid4(),
             test_case_id=test_case.id,
             status=ExecutionStatus.QUEUED,
-            executor=executor_name,
+            executor=executor_display,
             run_reference=f"run-{uuid4().hex[:12]}",
             summary={},
             error_message=None,

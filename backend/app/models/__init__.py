@@ -7,6 +7,7 @@ from app.models.project import Project
 from app.models.requirement import Requirement
 from app.models.test_case import TestCase
 from app.models.test_execution import TestExecution
+from app.models.workflow_execution import WorkflowEvent, WorkflowExecution
 
 __all__ = [
     "Project",
@@ -20,4 +21,7 @@ __all__ = [
     "IndexingJobStatus",
     "IndexingJobAction",
     "VerificationStatus",
+    "WorkflowExecution",
+    "WorkflowEvent",
 ]
+
