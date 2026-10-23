@@ -37,3 +37,9 @@ class TestExecution(Base):
     failure_analysis: Mapped["ExecutionFailureAnalysis | None"] = relationship(
         back_populates="execution", uselist=False, passive_deletes=True
     )
+    healing_proposals: Mapped[list["HealingProposal"]] = relationship(
+        foreign_keys="HealingProposal.original_execution_id", back_populates="original_execution", passive_deletes=True
+    )
+    healing_retries: Mapped[list["HealingProposal"]] = relationship(
+        foreign_keys="HealingProposal.retry_execution_id", back_populates="retry_execution", passive_deletes=True
+    )

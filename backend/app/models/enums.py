@@ -98,6 +98,23 @@ class WorkflowApprovalAction(StrEnum):
     REQUEST_REVISION = "request_revision"
 
 
+class HealingStatus(StrEnum):
+    DETECTED = "detected"
+    ANALYZING = "analyzing"
+    PROPOSED = "proposed"
+    AWAITING_APPROVAL = "awaiting_approval"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    VALIDATING = "validating"
+    HEALED = "healed"
+    FAILED = "failed"
+
+
+class HealingApprovalAction(StrEnum):
+    APPROVE = "approve"
+    REJECT = "reject"
+
+
 def enum_values(enum_class: type[StrEnum]) -> list[str]:
     """Store enum values (not Python member names) in PostgreSQL."""
 

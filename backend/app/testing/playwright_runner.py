@@ -168,6 +168,7 @@ class PlaywrightWebRunner:
         error_category: str | None = None
         failed_step_index: int | None = None
         evidence_items = []
+        healing_context: dict[str, Any] | None = None
 
         base_target_url = getattr(test_case, "target_url", None)
         if not base_target_url and hasattr(test_case, "requirement") and test_case.requirement:
@@ -364,6 +365,56 @@ class PlaywrightWebRunner:
                             else:
                                 error_category = ErrorCategory.APPLICATION_ERROR.value
 
+                            # Check if failure is an eligible selector failure for Phase 12 Self-Healing
+                            from app.services.self_healing_service import (
+                                classify_selector_failure,
+                                extract_page_dom_context,
+                                generate_candidate_selectors,
+                                validate_candidates_live,
+                            )
+                            is_selector_failure, sel_category = classify_selector_failure(action_type, err_msg)
+                            if is_selector_failure:
+                                try:
+                                    dom_ctx = extract_page_dom_context(page)
+                                    candidates = generate_candidate_selectors(
+                                        original_selector=params,
+                                        action_type=action_type,
+                                        action_text=action_text,
+                                        dom_elements=dom_ctx.get("elements", []),
+                                    )
+                                    validation_results = validate_candidates_live(
+                                        page=page,
+                                        candidates=candidates,
+                                        action_type=action_type,
+                                        original_selector=params,
+                                        action_text=action_text,
+                                    )
+                                    page_url_val = ""
+                                    page_title_val = ""
+                                    try:
+                                        page_url_val = page.url
+                                        page_title_val = page.title()
+                                    except Exception:
+                                        pass
+                                    healing_context = {
+                                        "step_index": idx,
+                                        "action_type": action_type,
+                                        "original_selector": params,
+                                        "failure_reason": err_msg,
+                                        "failure_category": sel_category or "element_not_found",
+                                        "page_url": page_url_val,
+                                        "page_title": page_title_val,
+                                        "dom_context": dom_ctx,
+                                        "candidate_validation_results": validation_results,
+                                    }
+                                    logger.info(
+                                        "Self-healing diagnostic captured for step %d: %d candidates evaluated",
+                                        idx,
+                                        len(validation_results),
+                                    )
+                                except Exception as heal_diag_exc:
+                                    logger.warning("Could not complete self-healing diagnostic: %s", heal_diag_exc)
+
                             # Capture screenshot on failure
                             try:
                                 screenshot_bytes = page.screenshot(full_page=True)
@@ -458,6 +509,7 @@ class PlaywrightWebRunner:
             error_category=error_category,
             failed_step_index=failed_step_index,
             evidence_items=evidence_items,
+            healing_context=healing_context,
             started_at=started_at,
             completed_at=completed_at,
         )

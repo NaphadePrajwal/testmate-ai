@@ -556,7 +556,80 @@ npm run lint
 npm run build
 ```
 
+## Phase 12 self-healing tests
+
+Phase 12 makes existing Playwright test automation resilient to minor UI and locator changes by detecting broken selectors, extracting sanitized DOM element context, generating and live-validating alternative candidates, requiring controlled human approval, applying safe transactional step repairs, and re-executing affected tests to verify that both the repaired interaction and relevant assertions succeed.
+
+### How Selector Healing Works
+
+1. **Failure Detection & Strict Eligibility:**
+   - Differentiates genuine locator failures (element not found, strict-mode ambiguous locator violations, element detached from DOM, element not visible when required, element not actionable, locator wait timeouts) from network errors, navigation failures, authentication problems, server 500s, or non-selector assertion failures.
+   - Preserves the original selector and error diagnostics verbatim.
+
+2. **Sanitized DOM Extraction:**
+   - Extracts accessible roles, accessible names, associated form labels, placeholders, stable test IDs (`data-testid`, `data-test`), name attributes, and distinctive text from interactive elements.
+   - Enforces strict size bounds (first 80 interactive elements, truncated text/labels) and masks password inputs (`[PROTECTED_PASSWORD]`).
+   - Treats page DOM text as untrusted data; never executes page instructions.
+
+3. **Deterministic Candidate Generation & Safe Ranking:**
+   - Evaluates high-fidelity semantic locators first: `role_and_name`, `test_id`, `label`, `placeholder`, stable element IDs, and scoped name attributes.
+   - Explicitly rejects fragile replacements: deep CSS hierarchies, positional selectors, transient IDs containing random hex strings/UUIDs, or dynamic tokens.
+   - Evaluates each candidate against the live Playwright page under a bounded timeout:
+     - Enforces uniqueness: candidate must match exactly **1** element (`count == 1`). If multiple elements match (`count > 1`), the candidate is flagged as ambiguous and rejected.
+     - Verifies visibility and actionability.
+     - Assigns a transparent score (0–100) based on locator stability, specificity, and agreement with the test step action.
+
+4. **Healing Lifecycle:**
+   ```text
+   DETECTED ──> ANALYZING ──> PROPOSED ──> AWAITING_APPROVAL ──> APPROVED ──> VALIDATING ──> HEALED / FAILED
+                                                      └──> REJECTED
+   ```
+
+5. **Human Approval & Controlled Safe Repair:**
+   - An authorized review is required before modifying any test case definition.
+   - **Rejection:** Preserves the original test step and marks proposal as `REJECTED`.
+   - **Approval:** Transactionally updates the affected test step's selector, stores previous selector history in step audit data, increments the test case version, links the decision audit trail, and triggers re-execution.
+   - Prevents duplicate submissions and concurrent race conditions via status validation and optimistic locking.
+
+6. **Re-Execution & Assertion Verification Rule:**
+   - **Critical Rule:** A test is **never** marked as healed simply because a selector was replaced.
+   - After applying an approved selector, the test is re-executed via Playwright.
+   - If the repaired step succeeds and all downstream test assertions pass, the proposal is marked `HEALED`.
+   - If the selector works but an assertion fails, or if the step fails again, the proposal is marked `FAILED`.
+
+7. **Retry Safeguards:**
+   - Maximum of 3 healing attempts per test case (`MAX_HEALING_ATTEMPTS_PER_TEST_CASE = 3`) to prevent infinite repair loops.
+
+### Self-Healing API Endpoints
+
+- `GET /api/v1/projects/{project_id}/healing-proposals`: List proposals with optional `status` filter and pagination.
+- `GET /api/v1/projects/{project_id}/healing-proposals/{proposal_id}`: Retrieve proposal details and live candidate validation breakdown.
+- `POST /api/v1/projects/{project_id}/healing-proposals/{proposal_id}/approve`: Approve proposed repair, apply step update, and trigger re-execution.
+- `POST /api/v1/projects/{project_id}/healing-proposals/{proposal_id}/reject`: Reject proposal and preserve original selector.
+- `GET /api/v1/projects/{project_id}/test-cases/{test_case_id}/healing-history`: Retrieve healing attempts for a specific test case.
+- `GET /api/v1/projects/{project_id}/executions/{execution_id}/healing-proposals`: Retrieve healing proposals generated during an execution run.
+
+### Running Phase 12 Tests
+
+```powershell
+# 1. Run Self-Healing unit and integration test suite (11 tests)
+Set-Location backend
+$env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/testmate_test"
+.\.venv\Scripts\python.exe -m pytest tests/test_self_healing_service.py -v
+
+# 2. Run full backend regression suite (182 tests)
+.\.venv\Scripts\python.exe -m pytest -q
+
+# 3. Check Alembic schema drift
+.\.venv\Scripts\python.exe -m alembic check
+
+# 4. Frontend lint and build verification
+Set-Location ../frontend
+npm run lint
+npm run build
+```
+
 ## Current limitations
 
-Phases 1–10 are fully implemented and verified across the backend automated test suite (167 passed tests), live Playwright browser runs, Alembic migrations, and the React frontend dashboard. External third-party websites outside approved domains are blocked by default for safety. Production deployments should run Playwright inside isolated containers or sandboxes.
+Phases 1–12 are fully implemented and verified across the backend automated test suite (182 passed tests), live Playwright browser runs, Alembic migrations, and the React frontend dashboard. External third-party websites outside approved domains are blocked by default for safety. Production deployments should run Playwright inside isolated containers or sandboxes.
 

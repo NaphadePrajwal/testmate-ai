@@ -101,6 +101,7 @@ class ExecutionOutcome(BaseModel):
     failed_step_index: int | None = None
     test_case_snapshot: TestCaseSnapshot | None = None
     evidence_items: list[EvidencePayload] = Field(default_factory=list)
+    healing_context: dict[str, Any] | None = None
     started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     completed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 

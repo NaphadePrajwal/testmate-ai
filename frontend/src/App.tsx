@@ -44,8 +44,27 @@ export default function App() {
   return (
     <AppLayout activePage={page === "Dashboard" ? "Dashboard" : "Projects"} onNavigate={navigate} status={<ApiStatus health={health.data} error={health.error} loading={health.isLoading} />}>
       {page === "Dashboard" ? (
-        <DashboardPage health={health.data} projectCount={projects.data?.items.length ?? null} isLoadingProjects={projects.isLoading} />
-      ) : page === "Project details" && selectedProject ? <ProjectDetailsPage project={selectedProject} onBack={() => navigate("Projects")} onProjectUpdated={updateSelectedProject} /> : <ProjectsPage projects={projects.data} error={projects.error} isLoading={projects.isLoading} onRetry={() => void projects.reload()} onCreate={createProject} onOpen={openProject} onPageChange={setProjectOffset} />}
+        <DashboardPage
+          health={health.data}
+          projects={projects.data?.items ?? []}
+          isLoadingProjects={projects.isLoading}
+          selectedProject={selectedProject}
+          onSelectProject={setSelectedProject}
+          onNavigateToProjects={() => navigate("Projects")}
+        />
+      ) : page === "Project details" && selectedProject ? (
+        <ProjectDetailsPage project={selectedProject} onBack={() => navigate("Projects")} onProjectUpdated={updateSelectedProject} />
+      ) : (
+        <ProjectsPage
+          projects={projects.data}
+          error={projects.error}
+          isLoading={projects.isLoading}
+          onRetry={() => void projects.reload()}
+          onCreate={createProject}
+          onOpen={openProject}
+          onPageChange={setProjectOffset}
+        />
+      )}
     </AppLayout>
   );
 }

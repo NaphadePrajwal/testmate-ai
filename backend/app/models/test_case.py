@@ -56,3 +56,4 @@ class TestCase(Base):
 
     requirement: Mapped["Requirement"] = relationship(back_populates="test_cases")
     executions: Mapped[list["TestExecution"]] = relationship(back_populates="test_case", passive_deletes=True)
+    healing_proposals: Mapped[list["HealingProposal"]] = relationship(back_populates="test_case", passive_deletes=True)

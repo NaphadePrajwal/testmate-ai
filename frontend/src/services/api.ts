@@ -25,7 +25,15 @@ import type {
   WorkflowExecution,
   WorkflowHistoryResponse,
   WorkflowListResponse,
-  WorkflowStartInput
+  WorkflowStartInput,
+  ProjectAnalyticsResponse,
+  ProjectTraceabilityResponse,
+  ProjectReportResponse,
+  Defect,
+  DefectListResponse,
+  DefectUpdateInput,
+  HealingProposal,
+  HealingProposalListResponse,
 } from "../types/api";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api/v1";
@@ -137,4 +145,44 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  getProjectAnalytics: (projectId: string): Promise<ProjectAnalyticsResponse> =>
+    request<ProjectAnalyticsResponse>(`/projects/${projectId}/analytics`),
+  getProjectTraceability: (projectId: string): Promise<ProjectTraceabilityResponse> =>
+    request<ProjectTraceabilityResponse>(`/projects/${projectId}/traceability`),
+  getProjectReport: (projectId: string): Promise<ProjectReportResponse> =>
+    request<ProjectReportResponse>(`/projects/${projectId}/report`),
+  getDefects: (projectId: string, limit = 50, offset = 0, status?: string, severity?: string): Promise<DefectListResponse> =>
+    request<DefectListResponse>(
+      collectionPath(`/projects/${projectId}/defects`, limit, offset, {
+        ...(status ? { status } : {}),
+        ...(severity ? { severity } : {}),
+      })
+    ),
+  getDefect: (projectId: string, defectId: string): Promise<Defect> =>
+    request<Defect>(`/projects/${projectId}/defects/${defectId}`),
+  updateDefect: (projectId: string, defectId: string, payload: DefectUpdateInput): Promise<Defect> =>
+    request<Defect>(`/projects/${projectId}/defects/${defectId}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+  getHealingProposals: (projectId: string, limit = 50, offset = 0, status?: string): Promise<HealingProposalListResponse> =>
+    request<HealingProposalListResponse>(
+      collectionPath(`/projects/${projectId}/healing-proposals`, limit, offset, status ? { status } : {})
+    ),
+  getHealingProposal: (projectId: string, proposalId: string): Promise<HealingProposal> =>
+    request<HealingProposal>(`/projects/${projectId}/healing-proposals/${proposalId}`),
+  approveHealingProposal: (projectId: string, proposalId: string, notes?: string): Promise<HealingProposal> =>
+    request<HealingProposal>(`/projects/${projectId}/healing-proposals/${proposalId}/approve`, {
+      method: "POST",
+      body: JSON.stringify({ decision: "approve", notes: notes || null }),
+    }),
+  rejectHealingProposal: (projectId: string, proposalId: string, notes?: string): Promise<HealingProposal> =>
+    request<HealingProposal>(`/projects/${projectId}/healing-proposals/${proposalId}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ decision: "reject", notes: notes || null }),
+    }),
+  getTestCaseHealingHistory: (projectId: string, testCaseId: string): Promise<HealingProposalListResponse> =>
+    request<HealingProposalListResponse>(`/projects/${projectId}/test-cases/${testCaseId}/healing-history`),
+  getExecutionHealingProposals: (projectId: string, executionId: string): Promise<HealingProposalListResponse> =>
+    request<HealingProposalListResponse>(`/projects/${projectId}/executions/${executionId}/healing-proposals`),
 };

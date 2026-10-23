@@ -145,8 +145,23 @@ export interface Defect {
   severity: DefectSeverity;
   status: DefectStatus;
   fingerprint?: string | null;
+  resolution_notes?: string | null;
+  verification_status?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type DefectListResponse = PageResponse<Defect>;
+
+export interface DefectUpdateInput {
+  title?: string;
+  description?: string;
+  severity?: DefectSeverity;
+  status?: DefectStatus;
+  resolution_notes?: string;
+  verification_status?: string;
+  verification_method?: string;
+  verification_evidence?: string;
 }
 
 export interface TestCaseSnapshot {
@@ -372,4 +387,160 @@ export interface WorkflowApprovalInput {
   action: WorkflowApprovalAction;
   notes?: string | null;
   revision_instructions?: string | null;
+}
+
+// Phase 11: Complete Dashboard Integration Types
+export interface ExecutionTrendPoint {
+  date: string;
+  passed: number;
+  failed: number;
+  error: number;
+  total: number;
+}
+
+export interface RecentExecutionItem {
+  id: string;
+  test_case_id: string;
+  test_case_title: string;
+  status: string;
+  executor?: string | null;
+  duration_ms?: number | null;
+  created_at: string;
+}
+
+export interface ProjectAnalyticsResponse {
+  project_id: string;
+  project_name: string;
+  total_requirements: number;
+  total_test_cases: number;
+  total_test_executions: number;
+  passed_executions: number;
+  failed_executions: number;
+  running_executions: number;
+  pending_executions: number;
+  error_executions: number;
+  execution_pass_rate: number;
+  requirement_coverage_rate: number;
+  total_defects: number;
+  open_defects: number;
+  critical_defects: number;
+  high_defects: number;
+  medium_defects: number;
+  low_defects: number;
+  defects_by_status: Record<string, number>;
+  defects_by_severity: Record<string, number>;
+  execution_trends: ExecutionTrendPoint[];
+  recent_executions: RecentExecutionItem[];
+}
+
+export interface TraceabilityTestCaseItem {
+  id: string;
+  title: string;
+  test_type: string;
+  review_status: string;
+  status: string;
+  latest_execution_status?: string | null;
+}
+
+export interface TraceabilityItem {
+  requirement_id: string;
+  requirement_title: string;
+  requirement_status: string;
+  test_cases_count: number;
+  coverage_status: "covered" | "uncovered";
+  latest_execution_status?: string | null;
+  test_cases: TraceabilityTestCaseItem[];
+  defect_count: number;
+}
+
+export interface ProjectTraceabilityResponse {
+  project_id: string;
+  total_requirements: number;
+  covered_requirements: number;
+  uncovered_requirements: number;
+  coverage_rate: number;
+  requirements_without_cases: number;
+  cases_without_executions: number;
+  items: TraceabilityItem[];
+}
+
+export interface ProjectReportResponse {
+  project_id: string;
+  project_name: string;
+  project_description?: string | null;
+  created_at: string;
+  analytics: ProjectAnalyticsResponse;
+  traceability_summary: ProjectTraceabilityResponse;
+  quality_score: number;
+}
+
+export type HealingStatus =
+  | "detected"
+  | "analyzing"
+  | "proposed"
+  | "awaiting_approval"
+  | "approved"
+  | "rejected"
+  | "validating"
+  | "healed"
+  | "failed";
+
+export type HealingApprovalAction = "approve" | "reject";
+
+export interface CandidateValidationResult {
+  candidate: Record<string, unknown>;
+  candidate_type: string;
+  matched: boolean;
+  match_count: number;
+  is_visible: boolean;
+  is_actionable: boolean;
+  score: number;
+  reasons: string[];
+}
+
+export interface HealingProposal {
+  id: string;
+  project_id: string;
+  test_case_id: string;
+  test_case_title?: string | null;
+  original_execution_id: string;
+  retry_execution_id?: string | null;
+  failed_step_index: number;
+  failed_action_type: string;
+  original_selector: Record<string, unknown>;
+  original_error?: string | null;
+  page_url?: string | null;
+  page_title?: string | null;
+  proposed_selector?: Record<string, unknown> | null;
+  proposed_selector_type?: string | null;
+  candidate_validations?: CandidateValidationResult[] | null;
+  status: HealingStatus;
+  confidence_score: number;
+  ranking_explanation?: string | null;
+  approval_decision?: string | null;
+  approval_notes?: string | null;
+  approved_at?: string | null;
+  applied_at?: string | null;
+  applied_selector?: Record<string, unknown> | null;
+  failure_reason?: string | null;
+  evidence_ids?: string[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface HealingProposalListResponse {
+  items: HealingProposal[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface HealingApprovalRequest {
+  decision: "approve";
+  notes?: string | null;
+}
+
+export interface HealingRejectionRequest {
+  decision: "reject";
+  notes?: string | null;
 }

@@ -312,6 +312,28 @@ class ExecutionService:
                 self.db.add(defect)
                 created_defect = defect
 
+            # Auto-record self-healing proposal if eligible selector failure
+            if outcome.status == ExecutionStatus.FAILED and outcome.healing_context:
+                from app.services.self_healing_service import SelfHealingService
+                try:
+                    hc = outcome.healing_context
+                    SelfHealingService(self.db).create_proposal_from_failure(
+                        project_id=project_id,
+                        test_case_id=test_case.id,
+                        execution_id=execution.id,
+                        step_index=hc["step_index"],
+                        action_type=hc["action_type"],
+                        original_selector=hc["original_selector"],
+                        failure_reason=hc["failure_reason"],
+                        failure_category=hc["failure_category"],
+                        page_url=hc.get("page_url"),
+                        page_title=hc.get("page_title"),
+                        dom_context=hc.get("dom_context", {}),
+                        candidate_validation_results=hc.get("candidate_validation_results", []),
+                    )
+                except Exception as heal_persist_exc:
+                    logger.warning("Could not persist healing proposal: %s", heal_persist_exc)
+
             commit_or_rollback(self.db)
             if created_defect is not None:
                 self._trigger_auto_indexing(project_id, KnowledgeRecordType.DEFECT, created_defect.id)
