@@ -609,6 +609,8 @@ Phase 12 makes existing Playwright test automation resilient to minor UI and loc
 - `GET /api/v1/projects/{project_id}/test-cases/{test_case_id}/healing-history`: Retrieve healing attempts for a specific test case.
 - `GET /api/v1/projects/{project_id}/executions/{execution_id}/healing-proposals`: Retrieve healing proposals generated during an execution run.
 
+- `GET /api/v1/projects/{project_id}/executions/{execution_id}/healing-proposals`: Retrieve healing proposals generated during an execution run.
+
 ### Running Phase 12 Tests
 
 ```powershell
@@ -617,7 +619,7 @@ Set-Location backend
 $env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/testmate_test"
 .\.venv\Scripts\python.exe -m pytest tests/test_self_healing_service.py -v
 
-# 2. Run full backend regression suite (182 tests)
+# 2. Run full backend regression suite (187 tests)
 .\.venv\Scripts\python.exe -m pytest -q
 
 # 3. Check Alembic schema drift
@@ -629,7 +631,295 @@ npm run lint
 npm run build
 ```
 
-## Current limitations
+---
 
-Phases 1–12 are fully implemented and verified across the backend automated test suite (182 passed tests), live Playwright browser runs, Alembic migrations, and the React frontend dashboard. External third-party websites outside approved domains are blocked by default for safety. Production deployments should run Playwright inside isolated containers or sandboxes.
+## Phase 13: Integration, Testing & Final Deployment
+
+Phase 13 completes the end-to-end integration, stabilization, regression testing, and local deployment readiness across all subsystems of TestMate AI:
+- **FastAPI Relational Backend & PostgreSQL:** Complete CRUD, migrations, ACID transaction boundaries, outbox event pattern, and project-isolated data scoping.
+- **Playwright Autonomous Testing Engine:** Multi-browser headless/headful automation, strict-mode violation handling, bounded timeouts, artifact management (full-page PNG screenshots, console logs).
+- **LangGraph Multi-Agent Orchestration:** Context validation, requirement analysis, test case generation, human approval interrupts (`PAUSED_FOR_APPROVAL`), resume, and conditional outcome routing.
+- **AI Failure Analysis & Historical RAG:** Gemini 2.5 Flash / OpenAI structured diagnosis, semantic search over historical defects/test cases via Qdrant vector database, and prompt-injection mitigations.
+- **Autonomous Self-Healing:** Runtime broken locator detection, live DOM candidate validation (uniqueness, visibility, actionability), human approval gate, safe atomic repair, and mandatory re-execution assertion verification.
+- **React + TypeScript + Tailwind Dashboard:** Real backend-connected analytics, interactive execution logs, test case inspection, self-healing proposal review, traceability matrix, defect management, and executive quality reporting.
+
+---
+
+### Local Installation & Fresh Machine Setup Guide
+
+Follow this step-by-step procedure to configure and run TestMate AI on a development workstation.
+
+#### 1. Software Prerequisites & Supported Versions
+
+| Software | Minimum Version | Recommended Version | Verification Command |
+| :--- | :--- | :--- | :--- |
+| **Python** | 3.11+ | 3.12.x | `python --version` |
+| **Node.js** | 20.x+ | 22.x LTS | `node --version` |
+| **npm** | 10.x+ | 10.x | `npm --version` |
+| **PostgreSQL** | 15.x+ | 16.x / 17.x | `psql --version` |
+| **Qdrant** | 1.8+ | 1.12+ (Docker/Server) | `curl http://localhost:6333/readyz` |
+| **Git** | 2.40+ | Latest | `git --version` |
+
+#### 2. Repository Setup
+
+```powershell
+git clone https://github.com/NaphadePrajwal/testmate-ai.git
+Set-Location "testmate-ai"
+```
+
+#### 3. Python Backend Environment Setup
+
+Create and activate a virtual environment, then install Python dependencies and Playwright browser binaries:
+
+```powershell
+# Navigate to backend directory
+Set-Location backend
+
+# Create virtual environment
+python -m venv .venv
+
+# Activate virtual environment (PowerShell)
+.\.venv\Scripts\Activate.ps1
+
+# Upgrade pip and install all backend dependencies
+pip install --upgrade pip
+pip install -r requirements.txt
+
+# Install Playwright browser engines (Chromium required for autonomous runner)
+python -m playwright install chromium
+```
+
+#### 4. Frontend Environment Setup
+
+```powershell
+# In a separate terminal, navigate to frontend
+Set-Location frontend
+
+# Install Node.js dependencies
+npm install
+```
+
+#### 5. PostgreSQL Database Configuration
+
+TestMate AI requires two isolated PostgreSQL databases:
+1. `testmate_ai`: The primary application development database.
+2. `testmate_test`: The dedicated, isolated integration test database.
+
+Create the databases and user using `psql` (or pgAdmin):
+
+```sql
+-- Connect to PostgreSQL as superuser (postgres):
+CREATE USER testmate WITH PASSWORD 'testmate' CREATEDB;
+CREATE DATABASE testmate_ai OWNER testmate;
+CREATE DATABASE testmate_test OWNER testmate;
+GRANT ALL PRIVILEGES ON DATABASE testmate_ai TO testmate;
+GRANT ALL PRIVILEGES ON DATABASE testmate_test TO testmate;
+```
+
+#### 6. Qdrant Vector Database Setup
+
+Run Qdrant via Docker (recommended) or download the standalone executable:
+
+```powershell
+# Start Qdrant server container
+docker run -d -p 6333:6333 -p 6334:6334 -v qdrant_storage:/qdrant/storage:z --name qdrant qdrant/qdrant
+```
+
+Verify that Qdrant is listening on port 6333:
+```powershell
+curl http://localhost:6333/readyz
+# Returns 200 OK
+```
+
+#### 7. Environment Variables Configuration
+
+Create safe `.env` files from the provided templates:
+
+**Backend (`backend/.env`):**
+```powershell
+Copy-Item backend\.env.example backend\.env
+```
+Populate `backend/.env` with your local settings (secrets are placeholder strings):
+```env
+# Database Settings
+DATABASE_URL=postgresql+psycopg://testmate:testmate@localhost:5432/testmate_ai
+TEST_DATABASE_URL=postgresql+psycopg://testmate:testmate@localhost:5432/testmate_test
+
+# AI Provider Configuration ('gemini' or 'openai')
+AI_PROVIDER=gemini
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-2.5-flash
+
+# Optional OpenAI Fallback:
+# AI_PROVIDER=openai
+# OPENAI_API_KEY=your_openai_api_key_here
+# OPENAI_MODEL=gpt-4o-mini
+
+# Qdrant Vector Database
+QDRANT_MODE=server
+QDRANT_URL=http://localhost:6333
+QDRANT_COLLECTION=testmate_historical_knowledge
+
+# Execution & Security Guardrails
+ANALYSIS_TIMEOUT_SECONDS=45
+PLAYWRIGHT_HEADLESS=true
+PLAYWRIGHT_NAVIGATION_TIMEOUT_MS=15000
+PLAYWRIGHT_ACTION_TIMEOUT_MS=8000
+ALLOWED_TARGET_DOMAINS=127.0.0.1,localhost,demo.testmate.internal
+```
+
+**Frontend (`frontend/.env`):**
+```powershell
+Copy-Item frontend\.env.example frontend\.env
+```
+```env
+VITE_API_BASE_URL=http://localhost:8000/api/v1
+```
+
+#### 8. Database Migrations & Schema Verification
+
+Apply Alembic migrations to the application database:
+
+```powershell
+Set-Location backend
+.\.venv\Scripts\python.exe -m alembic upgrade head
+
+# Verify zero schema drift
+.\.venv\Scripts\python.exe -m alembic check
+```
+
+#### 9. Starting the Application Services
+
+**Terminal 1 — Backend API Server:**
+```powershell
+Set-Location backend
+.\.venv\Scripts\Activate.ps1
+uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+**Terminal 2 — Frontend Dashboard Server:**
+```powershell
+Set-Location frontend
+npm run dev -- --port 5173
+```
+
+#### 10. Accessing the Application
+
+- **Web Dashboard:** [http://localhost:5173/dashboard](http://localhost:5173/dashboard)
+- **Interactive API Documentation (Swagger):** [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- **Backend Health Check:** [http://127.0.0.1:8000/api/v1/health](http://127.0.0.1:8000/api/v1/health)
+- **Built-in Demo Storefront:** [http://127.0.0.1:8000/api/v1/demo/storefront](http://127.0.0.1:8000/api/v1/demo/storefront)
+
+---
+
+### Regression Testing Commands & Verification
+
+Run all test suites using the repository's established commands:
+
+```powershell
+# 1. Run Phase 13 End-to-End Integration Suite (5 comprehensive scenarios)
+Set-Location backend
+$env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/testmate_test"
+.\.venv\Scripts\python.exe -m pytest tests/test_phase13_e2e_integration.py -v
+
+# 2. Run Full Backend Test Suite (187 tests covering Phases 0-13)
+.\.venv\Scripts\python.exe -m pytest -q
+
+# 3. Verify Alembic Migration Consistency
+.\.venv\Scripts\python.exe -m alembic check
+
+# 4. Frontend Lint and Production Build Verification
+Set-Location ../frontend
+npm run lint
+npm run build
+```
+
+---
+
+### Repeatable Final Project Demonstration Guide
+
+Follow this scripted demonstration to verify the complete TestMate AI platform end to end:
+
+#### Step 1: Confirm System Health
+1. Open [http://127.0.0.1:8000/api/v1/health](http://127.0.0.1:8000/api/v1/health) in a browser.
+2. Confirm the JSON response:
+   - `status: "ok"`
+   - `database.status: "connected"`
+   - `vector_database.status: "connected"`
+
+#### Step 2: Open Dashboard & Select Project
+1. Open [http://localhost:5173/dashboard](http://localhost:5173/dashboard).
+2. Note the service indicators in the header showing **API Online** and **PostgreSQL Connected**.
+3. Select an existing project or create a new one from the **Projects** view.
+
+#### Step 3: View Requirements & Generated Test Cases
+1. Click the **Test Cases** tab.
+2. View the test specifications generated for the requirement, including priority, test type (`WEB`), preconditions, review status (`APPROVED`), and steps.
+3. Click on any test case to open the full inspection modal showing structured step actions.
+
+#### Step 4: Execute a Test Case Autonomously via Playwright
+1. On the test case detail view, click **Execute Test**.
+2. The Playwright autonomous execution runner opens a headless browser instance, navigates to the target storefront (`/api/v1/demo/storefront`), performs input interactions, and captures screenshots and execution logs.
+3. Observe status transition from `QUEUED` -> `RUNNING` -> `PASSED`.
+
+#### Step 5: Inspect Execution History & Evidence
+1. Switch to the **Executions** tab.
+2. Click on the latest execution record.
+3. View the execution duration, step-by-step timing breakdown, and captured evidence artifacts (full-page screenshots and browser console logs).
+
+#### Step 6: Produce a Controlled Test Failure & Defect Creation
+1. Trigger execution on a test case configured with an intentionally mismatched assertion or invalid card.
+2. Observe execution failure status (`FAILED`).
+3. Switch to the **Defects** tab. Verify that a `Defect` record was auto-created and linked to the failed execution.
+
+#### Step 7: View AI Failure Analysis & Historical RAG Intelligence
+1. In the execution detail modal, click **AI Failure Analysis**.
+2. View the structured diagnosis generated by Gemini 2.5 Flash / OpenAI:
+   - Failure Category (e.g., `application_error` or `element_not_found`)
+   - Likely Root Cause
+   - Confidence Score (e.g., `HIGH`)
+   - Suggested Debugging Steps
+   - Historical RAG Intelligence showing semantically similar past defects retrieved from Qdrant.
+
+#### Step 8: Multi-Agent LangGraph Workflow Orchestration
+1. From the workflow interface or API (`POST /api/v1/projects/{project_id}/workflows`), trigger an autonomous testing cycle.
+2. Observe LangGraph progressing through `requirement_analysis` and `test_case_generation`.
+3. The workflow interrupts at the human approval checkpoint (`PAUSED_FOR_APPROVAL`).
+4. Review the synthesized test cases and submit an approval decision with notes.
+5. The workflow resumes and transitions to `COMPLETED`.
+
+#### Step 9: Self-Healing Broken Selector Demonstration
+1. Execute a test step referencing an obsolete button ID (`#old-obsolete-submit-button`).
+2. Playwright detects the strict-mode/timeout failure and automatically captures interactive page DOM elements.
+3. The Self-Healing Service generates and validates candidates against the live DOM (verifying unique match count = 1, visibility, and actionability).
+4. Switch to the **Self-Healing** tab in the dashboard.
+5. Review the proposal: view original selector, proposed semantic selector (`role: button, name: 'Complete Order'`), and confidence score (95/100).
+6. Click **Approve Proposal**. The backend safely applies the repair, increments the test case version to `v2`, updates the audit history, and automatically re-executes the test to verify that assertions pass (`HEALED`).
+
+#### Step 10: Executive Quality Report & Traceability
+1. Click the **Traceability** tab: observe the 100% requirement coverage matrix.
+2. Click the **Reports** tab: view the comprehensive Software Quality Score, test execution pass rate, risk exposure indicators, and formal sign-off report.
+
+---
+
+### Troubleshooting Common Issues
+
+| Issue | Root Cause | Resolution |
+| :--- | :--- | :--- |
+| **Backend 500: Database connection refused** | PostgreSQL service stopped or credentials incorrect | Ensure PostgreSQL service is running (`Get-Service postgresql*`). Check `DATABASE_URL` in `backend/.env`. |
+| **Alembic check fails / drift detected** | Schema changes not reflected in migrations | Run `alembic upgrade head`. Do not modify database tables manually without an Alembic migration. |
+| **Integration tests fail safety gate** | `TEST_DATABASE_URL` missing or points to dev database | Set `$env:TEST_DATABASE_URL="postgresql+psycopg://testmate:testmate@localhost:5432/testmate_test"`. Never run tests against `testmate_ai`. |
+| **Playwright: Browser executable not found** | Playwright binaries not downloaded | Run `python -m playwright install chromium` in the backend virtual environment. |
+| **Qdrant: Vector database unavailable** | Qdrant container not running | Run `docker start qdrant` or verify `curl http://localhost:6333/readyz`. Set `QDRANT_MODE=memory` in `backend/.env` for fallback in-memory testing. |
+| **AI Analysis: Provider API key invalid** | `GEMINI_API_KEY` or `OPENAI_API_KEY` missing | Update `backend/.env` with a valid API key from Google AI Studio or OpenAI Platform. |
+| **Frontend: CORS error or connection refused** | Backend running on non-default port | Ensure backend is listening on `http://127.0.0.1:8000` or update `VITE_API_BASE_URL` in `frontend/.env`. |
+
+---
+
+### Known Limitations & Deployment Notes
+
+1. **Host Isolation:** External URLs outside `127.0.0.1`, `localhost`, and approved domains are blocked by default SSRF security guards.
+2. **Qdrant Server Mode:** Server mode requires Qdrant listening on port 6333. An in-memory fallback (`QDRANT_MODE=memory`) is available for lightweight environments.
+3. **Containerized Production Deployments:** For high-scale production, run Playwright browser execution workers within isolated Docker/Kubernetes worker pods with CPU/RAM cgroups.
+
 

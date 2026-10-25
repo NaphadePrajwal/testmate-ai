@@ -30,11 +30,11 @@ export function TestCasesView({ projectId, projectName, onNavigateToExecutions }
     setIsLoading(true);
     setError(null);
     try {
-      const res = await api.getRequirementTestCases(
+      const res = await api.getProjectTestCases(
         projectId,
-        "", // Note: we can list project test cases via direct request or filter
         limit,
         offset,
+        undefined,
         reviewFilter === "all" ? undefined : (reviewFilter as ReviewStatus)
       );
       let items = res.items;
@@ -49,30 +49,8 @@ export function TestCasesView({ projectId, projectName, onNavigateToExecutions }
       }
       setTestCases(items);
       setTotal(res.total);
-    } catch {
-      // Fallback: list test cases from test-cases router directly
-      try {
-        const directRes = await fetch(
-          `http://localhost:8000/api/v1/projects/${projectId}/test-cases?limit=${limit}&offset=${offset}${
-            reviewFilter !== "all" ? `&review_status=${reviewFilter}` : ""
-          }`
-        );
-        const data = await directRes.json();
-        let items = data.items || [];
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase();
-          items = items.filter(
-            (tc: TestCase) =>
-              tc.title.toLowerCase().includes(q) ||
-              (tc.description || "").toLowerCase().includes(q) ||
-              tc.id.toLowerCase().includes(q)
-          );
-        }
-        setTestCases(items);
-        setTotal(data.total || 0);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load test cases.");
-      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load test cases.");
     } finally {
       setIsLoading(false);
     }

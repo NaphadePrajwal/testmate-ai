@@ -91,6 +91,18 @@ export const api = {
   analyzeRequirement: (projectId: string, requirementId: string): Promise<RequirementAnalysisResponse> => request<RequirementAnalysisResponse>(`/projects/${projectId}/requirements/${requirementId}/analysis`, { method: "POST" }),
   getRequirementTestCases: (projectId: string, requirementId: string, limit = 50, offset = 0, reviewStatus?: ReviewStatus): Promise<TestCaseListResponse> =>
     request<TestCaseListResponse>(collectionPath(`/projects/${projectId}/requirements/${requirementId}/test-cases`, limit, offset, reviewStatus ? { review_status: reviewStatus } : {})),
+  getProjectTestCases: (projectId: string, limit = 50, offset = 0, requirementId?: string, reviewStatus?: ReviewStatus): Promise<TestCaseListResponse> =>
+    request<TestCaseListResponse>(
+      collectionPath(
+        `/projects/${projectId}/test-cases`,
+        limit,
+        offset,
+        {
+          ...(requirementId ? { requirement_id: requirementId } : {}),
+          ...(reviewStatus ? { review_status: reviewStatus } : {}),
+        }
+      )
+    ),
   generateRequirementTestCases: (projectId: string, requirementId: string): Promise<GeneratedTestCasesResponse> =>
     request<GeneratedTestCasesResponse>(`/projects/${projectId}/requirements/${requirementId}/test-cases/generate`, { method: "POST" }),
   getRequirementTestCase: (projectId: string, requirementId: string, testCaseId: string): Promise<TestCase> =>
